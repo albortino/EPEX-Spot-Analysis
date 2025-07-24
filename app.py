@@ -188,27 +188,25 @@ else:
                 total_cost_static = df_classified['total_cost_static'].sum()
                 savings = total_cost_static - total_cost_flex
 
-                rec_col1, rec_col2 = st.columns(2)
-                with rec_col1:
-                    df_classified['price_quantile'] = df_classified.groupby('month')['spot_price_eur_kwh'].transform(lambda x: pd.qcut(x, 4, labels=False, duplicates='drop'))
-                    peak_consumption_cheap = df_classified[df_classified['price_quantile'] == 0]['peak_load_kwh'].sum()
-                    peak_total = df_classified['peak_load_kwh'].sum()
-                    peak_ratio = peak_consumption_cheap / peak_total if peak_total > 0 else 0
-                    
-                    if savings > 0 and peak_ratio > 0.3:
-                        st.subheader("✅ Flexible Plan Recommended")
-                        st.write(f"The flexible plan is better because you align **{peak_ratio:.0%}** of your peak usage with the cheapest 25% of market prices.")
+                # --- Recommendation Section ---
+                st.subheader("Tariff Recommendation")
+
+                # Calculate peak ratio for recommendation text
+                df_classified['price_quantile'] = df_classified.groupby('month')['spot_price_eur_kwh'].transform(lambda x: pd.qcut(x, 4, labels=False, duplicates='drop'))
+                peak_consumption_cheap = df_classified[df_classified['price_quantile'] == 0]['peak_load_kwh'].sum()
+                peak_total = df_classified['peak_load_kwh'].sum()
+                peak_ratio = peak_consumption_cheap / peak_total if peak_total > 0 else 0
+
+                if savings > 0:
+                    st.success(f"✅ Flexible Plan Recommended: You could have saved €{savings:.2f}")
+                    if peak_ratio > 0.3:
+                        st.write(f"This is a great fit. You already align **{peak_ratio:.0%}** of your peak usage with the cheapest 25% of market prices, which drives your savings.")
                     else:
-                        st.subheader("✅ Static Plan Recommended")
-                        st.write("The recommendation is based on your overall consumption pattern versus market prices during the selected period.")
-                
-                with rec_col2:
-                    if savings > 0:
-                        st.metric(label="Potential Savings", value=f"€{savings:.2f}")
-                    else:
-                        st.metric(label="Potential Savings", value=f"€{-savings:.2f}")
-                        
-                    
+                        st.write(f"The flexible plan was cheaper during this period. You could save even more by shifting high-consumption activities (like EV charging or washing) to times with lower spot prices.")
+                else:
+                    st.warning(f"⚠️ Static Plan Recommended: The flexible plan would have cost €{-savings:.2f} more.")
+                    st.write("Based on your current usage, a fixed price offers better cost stability. The flexible plan was more expensive for you during this period.")
+
                 # --- Detailed Analysis Tabs ---
                 tab1, tab2 = st.tabs(["Cost Comparison", "Usage Pattern Analysis"])
 
