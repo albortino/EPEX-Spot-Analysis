@@ -178,13 +178,12 @@ else:
                 df_classified['month'] = df_classified['timestamp'].dt.to_period('M')
                 df_classified['days_in_month'] = df_classified['timestamp'].dt.days_in_month
                 
-                # Use the new "on-top" price for flexible cost calculation
+                # Use the new "on-top" price for Total Flexible Cost calculation
                 flex_total_price_kwh = df_classified['spot_price_eur_kwh'] + flex_on_top_price
                 df_classified['total_cost_flexible'] = (df_classified['consumption_kwh'] * flex_total_price_kwh) + ((flex_monthly_fee / df_classified['days_in_month']) / 24)
                 df_classified['total_cost_static'] = (df_classified['consumption_kwh'] * static_kwh_price) + ((static_monthly_fee / df_classified['days_in_month']) / 24)
 
                 # --- Dashboard Display ---
-                st.header("Recommendation & Summary")
                 total_cost_flex = df_classified['total_cost_flexible'].sum()
                 total_cost_static = df_classified['total_cost_static'].sum()
                 savings = total_cost_static - total_cost_flex
@@ -220,30 +219,45 @@ else:
                     grouper = pd.Grouper(key='timestamp', freq=freq_map[resolution])
 
                     # Table to compare flex vs spot prices
-                    df_summary = df_classified.groupby(grouper).agg(**{
-                        "Total Consumption":('consumption_kwh', 'sum'),
-                        "Flexible cost":('total_cost_flexible', 'sum'),
-                        "Static cost":('total_cost_static', 'sum')}
+                    df_summary_agg = df_classified.groupby(grouper).agg(
+                        **{
+                            "Total Consumption": ('consumption_kwh', 'sum'),
+                            "Total Flexible Cost": ('total_cost_flexible', 'sum'),
+                            "Total Static Cost": ('total_cost_static', 'sum')
+                        }
                     ).reset_index()
-                    
-                    df_summary['Difference (€)'] = df_summary['Static cost'] - df_summary['Flexible cost']
-                    df_summary['Period'] = df_summary['timestamp'].dt.strftime('%Y-%m-%d' if resolution != 'Monthly' else '%Y-%m')
-                    
-                    st.line_chart(df_summary.set_index('Period'), y=['Flexible cost', 'Static cost'], y_label="Total Cost")
-                    
-                    st.subheader("Cost Summary Table")
-                    # Create the styled DataFrame for the summary table, hiding the index and coloring the difference
-                    summary_styler = df_summary[['Period', 'Total Consumption', 'Flexible cost', 'Static cost', 'Difference (€)']].style.format({
-                        'Total Consumption': '{:.2f} kWh',
-                        'Flexible cost': '€{:.2f}',
-                        'Static cost': '€{:.2f}',
-                        'Difference (€)': '€{:.2f}'
-                    }).map(
-                        lambda v: 'color: #5fba7d' if v > 0 else ('color: #d65f5f' if v < 0 else None),
-                        subset=['Difference (€)']
-                    )
+                    # Filter out periods with no consumption to avoid division by zero
+                    df_summary = df_summary_agg[df_summary_agg['Total Consumption'] > 0].copy()
 
-                    st.dataframe(summary_styler, hide_index=True, use_container_width=True)
+                    if df_summary.empty:
+                        st.warning(f"No consumption data available for the selected period at {resolution.lower()} resolution.")
+                    else:
+                        # Calculate average prices
+                        df_summary['Avg. Flexible Price (€/kWh)'] = df_summary['Total Flexible Cost'] / df_summary['Total Consumption']
+                        df_summary['Avg. Static Price (€/kWh)'] = df_summary['Total Static Cost'] / df_summary['Total Consumption']
+
+                        df_summary['Difference (€)'] = df_summary['Total Static Cost'] - df_summary['Total Flexible Cost']
+                        df_summary['Period'] = df_summary['timestamp'].dt.strftime('%Y-%m-%d' if resolution != 'Monthly' else '%Y-%m')
+                        
+                        st.subheader("Total Cost Comparison")
+                        st.line_chart(df_summary.set_index('Period'), y=['Total Flexible Cost', 'Total Static Cost'], y_label="Total Cost (€)")
+
+                        st.subheader("Average Price Comparison")
+                        st.line_chart(df_summary.set_index('Period'), y=['Avg. Flexible Price (€/kWh)', 'Avg. Static Price (€/kWh)'], y_label="Average Price (€/kWh)")
+                        
+                        st.subheader("Cost Summary Table")
+                        # Create the styled DataFrame for the summary table, hiding the index and coloring the difference
+                        summary_styler = df_summary[['Period', 'Total Consumption', 'Total Flexible Cost', 'Total Static Cost', 'Difference (€)']].style.format({
+                            'Total Consumption': '{:.2f} kWh',
+                            'Total Flexible Cost': '€{:.2f}',
+                            'Total Static Cost': '€{:.2f}',
+                            'Difference (€)': '€{:.2f}'
+                        }).map(
+                            lambda v: 'color: #5fba7d' if v > 0 else ('color: #d65f5f' if v < 0 else None),
+                            subset=['Difference (€)']
+                        )
+
+                        st.dataframe(summary_styler, hide_index=True, use_container_width=True)
 
                 with tab2:
                     st.subheader("Analyze Your Consumption Profile")
