@@ -208,7 +208,7 @@ else:
                     st.write("Based on your current usage, a fixed price offers better cost stability. The flexible plan was more expensive for you during this period.")
 
                 # --- Detailed Analysis Tabs ---
-                tab1, tab2 = st.tabs(["Cost Comparison", "Usage Pattern Analysis"])
+                tab1, tab2, tab3 = st.tabs(["Cost Comparison", "Usage Pattern Analysis", "Yearly Summary"])
 
                 with tab1:
                     st.subheader("Cost Breakdown by Period")
@@ -277,7 +277,11 @@ else:
                         st.warning(f"No data available for {day_filter.lower()}.")
                     else:
                         # Display thresholds
-                        st.metric(label="Base Load Threshold", value=f"{base_load_threshold:.3f} kWh")
+                        st.metric(
+                            label="Base Load Threshold",
+                            value=f"{base_load_threshold:.3f} kWh",
+                            help="The continuous minimum power consumption, calculated as the average consumption during late night hours (2-5 AM) when usage is typically at its lowest."
+                        )
                         st.metric(
                             label="Peak Detection Threshold (Sharp Increase)",
                             value=f"{peak_classification_threshold:.3f} kWh",
@@ -289,13 +293,22 @@ else:
                             st.subheader("Consumption Proportions")
                             load_sums = df_pattern[['base_load_kwh', 'regular_load_kwh', 'peak_load_kwh']].sum()
                             load_sums.index = ['Base Load', 'Regular Load', 'Peak Load']
+                            # Ensure consistent order
+                            desired_order = ['Base Load', 'Regular Load', 'Peak Load']
+                            load_sums = load_sums.reindex(desired_order)
                             st.bar_chart(load_sums, y_label="Total Consumption (kWh)")
+                            st.caption("""
+                            - **Base Load**: Your continuous, minimum electricity usage.
+                            - **Regular Load**: Your variable, everyday consumption above the base load.
+                            - **Peak Load**: Sudden, sharp increases in consumption (e.g., turning on a large appliance).
+                            """)
 
                         with pat_col2:
                             st.subheader("Average Spot Price per Profile")
                             # Calculate weighted average price for each load type
                             avg_prices = {}
-                            for load_type in ['base_load_kwh', 'regular_load_kwh', 'peak_load_kwh']:
+                            load_types_in_order = ['base_load_kwh', 'regular_load_kwh', 'peak_load_kwh']
+                            for load_type in load_types_in_order:
                                 total_kwh = df_pattern[load_type].sum()
                                 if total_kwh > 0:
                                     weighted_price_sum = (df_pattern[load_type] * df_pattern['spot_price_eur_kwh']).sum()
@@ -304,4 +317,51 @@ else:
                                     avg_prices[load_type.replace('_kwh', '').replace('_', ' ').title()] = 0
                             
                             df_avg_prices = pd.DataFrame.from_dict(avg_prices, orient='index', columns=['Average Price (€/kWh)'])
+                            # Ensure consistent order
+                            desired_order_avg = ['Base Load', 'Regular Load', 'Peak Load']
+                            df_avg_prices = df_avg_prices.reindex(desired_order_avg)
+
                             st.bar_chart(df_avg_prices, y_label="Average Price (€/kWh)")
+
+                with tab3:
+                    st.subheader("Yearly Summary")
+
+                    # Create a year column for grouping
+                    df_summary_yearly = df_classified.copy()
+                    df_summary_yearly['year'] = df_summary_yearly['timestamp'].dt.year
+
+                    # Group by year and aggregate
+                    yearly_agg = df_summary_yearly.groupby('year').agg(
+                        total_consumption_kwh=('consumption_kwh', 'sum'),
+                        total_cost_flexible=('total_cost_flexible', 'sum'),
+                        total_cost_static=('total_cost_static', 'sum'),
+                        number_of_days=('timestamp', lambda x: x.dt.date.nunique())
+                    ).reset_index()
+
+                    # Avoid division by zero
+                    yearly_agg = yearly_agg[yearly_agg['total_consumption_kwh'] > 0].copy()
+
+                    if yearly_agg.empty:
+                        st.warning("Not enough data to generate a yearly summary.")
+                    else:
+                        # Calculate derived metrics
+                        yearly_agg['avg_daily_consumption_kwh'] = yearly_agg['total_consumption_kwh'] / yearly_agg['number_of_days']
+                        yearly_agg['avg_flexible_price'] = yearly_agg['total_cost_flexible'] / yearly_agg['total_consumption_kwh']
+                        yearly_agg['avg_static_price'] = yearly_agg['total_cost_static'] / yearly_agg['total_consumption_kwh']
+
+                        # Prepare for display
+                        display_df = yearly_agg[['year', 'total_consumption_kwh', 'avg_daily_consumption_kwh', 'avg_flexible_price', 'avg_static_price']].rename(columns={
+                            'year': 'Year',
+                            'total_consumption_kwh': 'Total Consumption',
+                            'avg_daily_consumption_kwh': 'Avg. Daily Consumption',
+                            'avg_flexible_price': 'Avg. Flexible Price (€/kWh)',
+                            'avg_static_price': 'Avg. Static Price (€/kWh)'
+                        })
+
+                        # Style and display the dataframe
+                        st.dataframe(display_df.style.format({
+                            'Total Consumption': '{:,.2f} kWh',
+                            'Avg. Daily Consumption': '{:,.2f} kWh',
+                            'Avg. Flexible Price (€/kWh)': '€{:.4f}',
+                            'Avg. Static Price (€/kWh)': '€{:.4f}'
+                        }), hide_index=True, use_container_width=True)
