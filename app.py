@@ -82,16 +82,20 @@ def get_base_load_threshold(df: pd.DataFrame) -> float:
     night_hours = df_local[df_local['timestamp'].dt.hour.isin([2, 3, 4, 5])]
     return night_hours['consumption_kwh'].mean() if not night_hours.empty else 0
 
-def classify_usage(df: pd.DataFrame, base_load_threshold: float) -> pd.DataFrame:
-    """Classifies hourly consumption into Base, Peak, and Regular load."""
+def classify_usage(df: pd.DataFrame, base_load_threshold: float) -> tuple[pd.DataFrame, float]:
+    """
+    Classifies hourly consumption into Base, Peak, and Regular load.
+    Returns the classified DataFrame and the calculated peak threshold.
+    """
     if df.empty:
-        return df
+        return df, 0.0
     df_c = df.copy()
     
     df_c['base_load_kwh'] = df_c['consumption_kwh'].clip(upper=base_load_threshold)
     
     df_c['consumption_diff'] = df_c['consumption_kwh'].diff().fillna(0)
     peak_threshold = df_c[df_c['consumption_diff'] > 0]['consumption_diff'].std() * 1.5
+    peak_threshold = 0.0 if pd.isna(peak_threshold) else peak_threshold
     df_c['is_peak_hour'] = (df_c['consumption_diff'] > peak_threshold) & (peak_threshold > 0)
     
     influenceable_load = df_c['consumption_kwh'] - df_c['base_load_kwh']
@@ -101,7 +105,7 @@ def classify_usage(df: pd.DataFrame, base_load_threshold: float) -> pd.DataFrame
     for col in ['base_load_kwh', 'peak_load_kwh', 'regular_load_kwh']:
         df_c[col] = df_c[col].clip(lower=0)
         
-    return df_c.drop(columns=['consumption_diff', 'is_peak_hour'])
+    return df_c.drop(columns=['consumption_diff', 'is_peak_hour']), peak_threshold
 
 # --- Main Application Logic ---
 # Initial setup and sidebar definition
@@ -170,7 +174,7 @@ else:
                 df_analysis = df_merged[~df_merged['date_col'].isin(excluded_days)].copy() if excluded_days else df_merged.copy()
 
                 # Classify usage patterns and calculate costs on the filtered dataframe
-                df_classified = classify_usage(df_analysis, base_load_threshold)
+                df_classified, peak_classification_threshold = classify_usage(df_analysis, base_load_threshold)
                 df_classified['month'] = df_classified['timestamp'].dt.to_period('M')
                 df_classified['days_in_month'] = df_classified['timestamp'].dt.days_in_month
                 
@@ -212,28 +216,34 @@ else:
                 with tab1:
                     st.subheader("Cost Breakdown by Period")
                     resolution = st.radio("Select Time Resolution", ('Daily', 'Weekly', 'Monthly'), horizontal=True, key="res")
-                    freq_map = {'Daily': 'D', 'Weekly': 'W-MON', 'Monthly': 'M'}
+                    freq_map = {'Daily': 'D', 'Weekly': 'W-MON', 'Monthly': 'ME'}
                     grouper = pd.Grouper(key='timestamp', freq=freq_map[resolution])
 
                     # Table to compare flex vs spot prices
-                    df_summary = df_classified.groupby(grouper).agg(
-                        total_consumption_kwh=('consumption_kwh', 'sum'),
-                        total_cost_flexible=('total_cost_flexible', 'sum'),
-                        total_cost_static=('total_cost_static', 'sum')
+                    df_summary = df_classified.groupby(grouper).agg(**{
+                        "Total Consumption":('consumption_kwh', 'sum'),
+                        "Flexible cost":('total_cost_flexible', 'sum'),
+                        "Static cost":('total_cost_static', 'sum')}
                     ).reset_index()
                     
-                    df_summary['Difference (€)'] = df_summary['total_cost_static'] - df_summary['total_cost_flexible']
+                    df_summary['Difference (€)'] = df_summary['Static cost'] - df_summary['Flexible cost']
                     df_summary['Period'] = df_summary['timestamp'].dt.strftime('%Y-%m-%d' if resolution != 'Monthly' else '%Y-%m')
                     
-                    st.bar_chart(df_summary.set_index('Period'), y=['total_cost_flexible', 'total_cost_static'], y_label="Total Cost (€)")
+                    st.line_chart(df_summary.set_index('Period'), y=['Flexible cost', 'Static cost'], y_label="Total Cost")
                     
                     st.subheader("Cost Summary Table")
-                    st.dataframe(df_summary[['Period', 'total_consumption_kwh', 'total_cost_flexible', 'total_cost_static', 'Difference (€)']].style.format({
-                        'total_consumption_kwh': '{:.2f} kWh',
-                        'total_cost_flexible': '€{:.2f}',
-                        'total_cost_static': '€{:.2f}',
+                    # Create the styled DataFrame for the summary table, hiding the index and coloring the difference
+                    summary_styler = df_summary[['Period', 'Total Consumption', 'Flexible cost', 'Static cost', 'Difference (€)']].style.format({
+                        'Total Consumption': '{:.2f} kWh',
+                        'Flexible cost': '€{:.2f}',
+                        'Static cost': '€{:.2f}',
                         'Difference (€)': '€{:.2f}'
-                    }).bar(subset=['Difference (€)'], align='zero', color=['#d65f5f', '#5fba7d']))
+                    }).map(
+                        lambda v: 'color: #5fba7d' if v > 0 else ('color: #d65f5f' if v < 0 else None),
+                        subset=['Difference (€)']
+                    )
+
+                    st.dataframe(summary_styler, hide_index=True, use_container_width=True)
 
                 with tab2:
                     st.subheader("Analyze Your Consumption Profile")
@@ -256,8 +266,11 @@ else:
                     else:
                         # Display thresholds
                         st.metric(label="Base Load Threshold", value=f"{base_load_threshold:.3f} kWh")
-                        peak_display_threshold = df_pattern[df_pattern['consumption_diff'] > 0]['consumption_diff'].std() * 1.5
-                        st.metric(label="Peak Detection Threshold (Sharp Increase)", value=f"{peak_display_threshold:.3f} kWh")
+                        st.metric(
+                            label="Peak Detection Threshold (Sharp Increase)",
+                            value=f"{peak_classification_threshold:.3f} kWh",
+                            help="The threshold for a sharp increase in consumption, used to identify 'Peak Load'. This is calculated based on the entire selected period, not just the filtered view (e.g., Weekdays/Weekends)."
+                        )
 
                         pat_col1, pat_col2 = st.columns(2)
                         with pat_col1:
