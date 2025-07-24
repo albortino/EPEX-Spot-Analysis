@@ -12,8 +12,9 @@ st.markdown("💡 **Pro-Tip:** You can switch between light and dark mode in the
 
 # --- Constants and Configuration ---
 LOCAL_TIMEZONE = "Europe/Vienna" # Timezone for your consumption data, used to convert to UTC
-FLEX_COLOR = "#00A9FF"  # A bright, prominent blue for flexible tariff data
-STATIC_COLOR = "#808080" # A neutral grey for static tariff data
+FLEX_COLOR = "#fd690d"  
+FLEX_COLOR_LIGHT = "#f8aa7a"  
+STATIC_COLOR = "#929292" 
 
 # --- Data Fetching and Processing Functions ---
 
@@ -309,7 +310,7 @@ else:
                             # Ensure consistent order
                             desired_order = ['Base Load', 'Regular Load', 'Peak Load']
                             load_sums = load_sums.reindex(desired_order)
-                            st.bar_chart(load_sums, y_label="Total Consumption (kWh)")
+                            st.bar_chart(load_sums, y_label="Total Consumption (kWh)", color=FLEX_COLOR_LIGHT)
                             st.caption("""
                             - **Base Load**: Your continuous, minimum electricity usage.
                             - **Regular Load**: Your variable, everyday consumption above the base load.
@@ -330,11 +331,12 @@ else:
                                     avg_prices[load_type.replace('_kwh', '').replace('_', ' ').title()] = 0
                             
                             df_avg_prices = pd.DataFrame.from_dict(avg_prices, orient='index', columns=['Average Price (€/kWh)'])
+                            
                             # Ensure consistent order
                             desired_order_avg = ['Base Load', 'Regular Load', 'Peak Load']
                             df_avg_prices = df_avg_prices.reindex(desired_order_avg)
 
-                            st.bar_chart(df_avg_prices, y_label="Average Price (€/kWh)", color=FLEX_COLOR)
+                            st.bar_chart(df_avg_prices, y_label="Average Price (€/kWh)", color=FLEX_COLOR_LIGHT)
 
                 with tab3:
                     st.subheader("Yearly Summary")
