@@ -7,10 +7,13 @@ from datetime import datetime, date
 st.set_page_config(layout="wide")
 st.title("Electricity Tariff Comparison Dashboard")
 st.markdown("Analyze your consumption, compare flexible vs. static tariffs, and understand your usage patterns.")
+st.markdown("💡 **Pro-Tip:** You can switch between light and dark mode in the settings menu (top right corner).")
 
 
 # --- Constants and Configuration ---
 LOCAL_TIMEZONE = "Europe/Vienna" # Timezone for your consumption data, used to convert to UTC
+FLEX_COLOR = "#00A9FF"  # A bright, prominent blue for flexible tariff data
+STATIC_COLOR = "#808080" # A neutral grey for static tariff data
 
 # --- Data Fetching and Processing Functions ---
 
@@ -238,10 +241,20 @@ else:
                         df_summary['Period'] = df_summary['timestamp'].dt.strftime('%Y-%m-%d' if resolution != 'Monthly' else '%Y-%m')
                         
                         st.subheader("Total Cost Comparison")
-                        st.line_chart(df_summary.set_index('Period'), y=['Total Flexible Cost', 'Total Static Cost'], y_label="Total Cost (€)")
+                        st.line_chart(
+                            df_summary.set_index('Period'),
+                            y=['Total Flexible Cost', 'Total Static Cost'],
+                            y_label="Total Cost (€)",
+                            color=[FLEX_COLOR, STATIC_COLOR]
+                        )
 
                         st.subheader("Average Price Comparison")
-                        st.line_chart(df_summary.set_index('Period'), y=['Avg. Flexible Price (€/kWh)', 'Avg. Static Price (€/kWh)'], y_label="Average Price (€/kWh)")
+                        st.line_chart(
+                            df_summary.set_index('Period'),
+                            y=['Avg. Flexible Price (€/kWh)', 'Avg. Static Price (€/kWh)'],
+                            y_label="Average Price (€/kWh)",
+                            color=[FLEX_COLOR, STATIC_COLOR]
+                        )
                         
                         st.subheader("Cost Summary Table")
                         # Create the styled DataFrame for the summary table, hiding the index and coloring the difference
@@ -321,7 +334,7 @@ else:
                             desired_order_avg = ['Base Load', 'Regular Load', 'Peak Load']
                             df_avg_prices = df_avg_prices.reindex(desired_order_avg)
 
-                            st.bar_chart(df_avg_prices, y_label="Average Price (€/kWh)")
+                            st.bar_chart(df_avg_prices, y_label="Average Price (€/kWh)", color=FLEX_COLOR)
 
                 with tab3:
                     st.subheader("Yearly Summary")
