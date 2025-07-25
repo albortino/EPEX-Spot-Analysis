@@ -1,0 +1,27 @@
+[
+  {
+    "name": "smartCONTROL (smartENERGY)",
+    "on_top_price": 0.0144,
+    "monthly_fee": 2.99
+  },
+  {
+    "name": "SteirerStrom Spot (Energie Steiermark)",
+    "on_top_price": 0.0144,
+    "monthly_fee": 3.82
+  },
+  {
+    "name": "Oeko Spot+ (oekostrom)",
+    "on_top_price": 0.0180,
+    "monthly_fee": 1.80
+  },
+  {
+    "name": "wüsterstrom Spot (wüsterstrom)",
+    "on_top_price": 0.00, 
+    "monthly_fee": 5.75
+  },
+  {
+    "name": "Tulln Strom SPOT Stunde (TullnEnergie)",
+    "on_top_price": 0.00,
+    "monthly_fee": 5.40
+  }
+]

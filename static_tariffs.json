@@ -1,0 +1,47 @@
+[
+  {
+    "name": "grünstrom classic (Grünwelt Energie)",
+    "on_top_price": 0.0990,
+    "monthly_fee": 5.00
+  },
+  {
+    "name": "disk.strom (disk.energy)",
+    "on_top_price": 0.1150,
+    "monthly_fee": 1.66
+  },
+  {
+    "name": "Aquavento Grünstrom (Kittel Mühle)",
+    "on_top_price": 0.1200,
+    "monthly_fee": 3.00
+  },
+  {
+    "name": "Ökostrom Fixtarif (RZ Pellets & Ökostrom)",
+    "on_top_price": 0.1225,
+    "monthly_fee": 4.95
+  },
+  {
+    "name": "Max Heimat Strom (MAXENERGY)",
+    "on_top_price": 0.1250,
+    "monthly_fee": 5.00
+  },
+  {
+    "name": "SWITCH: Nur sicher (Switch Energie)",
+    "on_top_price": 0.1250,
+    "monthly_fee": 5.00
+  },
+  {
+    "name": "Drei Strom (Drei Energie)",
+    "on_top_price": 0.1310,
+    "monthly_fee": 5.00
+  },
+  {
+    "name": "Aktiv Basismix ungebunden (Wien Energie)",
+    "on_top_price": 0.135162,
+    "monthly_fee": 4.17
+  },
+  {
+    "name": "E.ON Ökostrom Basis (E.ON Energie Österreich)",
+    "on_top_price": 0.13,
+    "monthly_fee": 4.50
+  }
+]
