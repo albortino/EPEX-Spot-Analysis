@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 from datetime import datetime, date
 import matplotlib.pyplot as plt
+import random
 
 # --- Page and App Configuration ---
 st.set_page_config(layout="wide")
@@ -112,6 +113,50 @@ def run_cost_analysis(df: pd.DataFrame, flex_on_top: float, flex_fee: float, sta
     df_costs["total_cost_static"] = (df_costs["consumption_kwh"] * static_price) + hourly_static_fee
     return df_costs
 
+def simulate_peak_shifting(df: pd.DataFrame, shift_percentage: float) -> pd.DataFrame:
+    """
+    Simulates shifting a percentage of each peak load to the cheapest hour
+    within a +/- 2-hour window. This provides a more realistic model of
+    short-term load shifting (e.g., delaying an appliance by an hour or two).
+    """
+    if shift_percentage == 0:
+        return df
+
+    df_sim = df.copy()
+    
+    # This series will store the load that is moved TO a specific hour.
+    # This avoids modifying the dataframe while iterating over it.
+    shifted_load_additions = pd.Series(0.0, index=df_sim.index)
+
+    # Identify rows with peak load to iterate over them
+    peak_indices = df_sim[df_sim['peak_load_kwh'] > 0.001].index
+
+    for peak_idx in peak_indices:
+        # 1. Define the 5-hour window (current hour +/- 2 hours) for each peak
+        current_timestamp = df_sim.loc[peak_idx, 'timestamp']
+        window_df = df_sim[
+            (df_sim['timestamp'] >= current_timestamp - pd.Timedelta(hours=2)) &
+            (df_sim['timestamp'] <= current_timestamp + pd.Timedelta(hours=2))
+        ]
+        if window_df.empty: continue
+
+        # 2. Find the hour with the minimum price in this local window
+        cheapest_hour_in_window = window_df.loc[window_df['spot_price_eur_kwh'].idxmin()]
+        
+        # 3. If a cheaper hour exists, shift the load
+        if cheapest_hour_in_window['spot_price_eur_kwh'] < df_sim.loc[peak_idx, 'spot_price_eur_kwh']:
+            kwh_to_shift = df_sim.loc[peak_idx, 'peak_load_kwh'] * (shift_percentage / 100.0)
+            df_sim.loc[peak_idx, 'peak_load_kwh'] -= kwh_to_shift
+            shifted_load_additions.loc[cheapest_hour_in_window.name] += kwh_to_shift
+
+    # 4. Add the accumulated shifted loads to the regular load of the target hours
+    df_sim['regular_load_kwh'] += shifted_load_additions
+    
+    # 6. Recalculate total consumption based on the new distribution
+    df_sim["consumption_kwh"] = df_sim["base_load_kwh"] + df_sim["regular_load_kwh"] + df_sim["peak_load_kwh"]
+    
+    return df_sim
+
 # --- UI and Rendering Functions ---
 
 def get_sidebar_inputs(df_consumption: pd.DataFrame):
@@ -136,8 +181,18 @@ def get_sidebar_inputs(df_consumption: pd.DataFrame):
             static_price = st.number_input("Fixed Price (€/kWh)", value=0.14, min_value=0.0, step=0.01)
             static_fee = st.number_input("Monthly Fee (€)", value=2.99, min_value=0.0, step=0.1)
 
-        # 3. Absence Handling (conditionally)
-        return start_date, end_date, flex_on_top, flex_fee, static_price, static_fee
+        # 3. Cost Simulation
+        st.subheader("3. Cost Simulation")
+        shift_percentage = st.slider(
+            "Shift Peak Load (%)",
+            min_value=0,
+            max_value=100,
+            value=0,
+            step=5,
+            help="Simulate shifting a percentage of your peak consumption to a cheaper hour within a +/- 2-hour window. This models realistic, short-term adjustments."
+        )
+
+        return start_date, end_date, flex_on_top, flex_fee, static_price, static_fee, shift_percentage
 
 def render_recommendation(df: pd.DataFrame):
     """Displays the final tariff recommendation based on calculated savings."""
@@ -178,8 +233,15 @@ def render_cost_comparison_tab(df: pd.DataFrame):
     
     if not df_summary.empty:
         df_summary["Period"] = df_summary["timestamp"].dt.strftime("%Y-%m-%d" if resolution != "Monthly" else "%Y-%m")
+        st.subheader("Total Cost Comparison")
         st.line_chart(df_summary.set_index("Period"), y=["Total Flexible Cost", "Total Static Cost"], y_label="Total Cost (€)", color=[FLEX_COLOR, STATIC_COLOR])
         
+        if resolution != "Daily":
+            df_summary['Avg. Flexible Price (€/kWh)'] = df_summary['Total Flexible Cost'] / df_summary['Total Consumption']
+            df_summary['Avg. Static Price (€/kWh)'] = df_summary['Total Static Cost'] / df_summary['Total Consumption']
+            st.subheader("Average Price Comparison")
+            st.line_chart(df_summary.set_index('Period'), y=['Avg. Flexible Price (€/kWh)', 'Avg. Static Price (€/kWh)'], y_label="Average Price (€/kWh)", color=[FLEX_COLOR, STATIC_COLOR])
+            
         df_summary["Difference (€)"] = df_summary["Total Static Cost"] - df_summary["Total Flexible Cost"]
         styler = df_summary[["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]].style.format({
             "Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"
@@ -198,7 +260,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         st.warning(f"No data available for {day_filter.lower()}.")
         return
 
-    # --- NEW COMBINED CHART ---
+    # --- COMBINED CHART ---
     st.subheader("Consumption & Cost Profile")
     st.text("The following chart depicts the proportion of each usage pattern on the x-axis, and the average price per kWh on the y-axis.\nIf peak usage costs align with regular usage, significant cost-saving potential is indicated.")
     load_types = ["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]
@@ -234,6 +296,43 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         fig.tight_layout()
         st.pyplot(fig)
     
+    # --- Example Day Breakdown ---
+    st.subheader("Example Day Breakdown")
+    st.markdown("This chart shows a random day from your selection, breaking down each hour's consumption into its classified components: **Base**, **Regular**, and **Peak** load. This helps visualize when your high-consumption activities occur.")
+
+    available_dates = df_pattern["timestamp"].dropna().dt.tz_convert(LOCAL_TIMEZONE).dt.date.unique()
+
+    if len(available_dates) > 0:
+        # Use session state to keep the random day consistent across reruns
+        if 'random_day' not in st.session_state or st.session_state.random_day not in available_dates:
+            st.session_state.random_day = random.choice(available_dates)
+
+        col1_day, col2_day = st.columns([3, 1])
+        with col1_day:
+            st.caption(f"Displaying data for {st.session_state.random_day.strftime('%A, %Y-%m-%d')}")
+        with col2_day:
+            if st.button("Show a Different Day"):
+                st.session_state.random_day = random.choice(available_dates)
+                st.rerun()
+
+        # Filter data for the selected random day
+        df_day = df_pattern[df_pattern["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.date == st.session_state.random_day].copy()
+        
+        if not df_day.empty:
+            df_day["hour"] = df_day["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.hour
+            df_plot_day = df_day.set_index("hour")[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
+            
+            # Rename for clearer legend
+            df_plot_day.columns = ["Base Load", "Regular Load", "Peak Load"]
+            
+            st.bar_chart(
+                df_plot_day,
+                color=[STATIC_COLOR, FLEX_COLOR_LIGHT, FLEX_COLOR],
+                y_label="Consumption (kWh)"
+            )
+    else:
+        st.info("Not enough data in the selection to display an example day.")
+    
     col1, col2 = st.columns(2)
     col1.metric("Base Load Threshold (Continuous Usage)", f"{base_threshold:.3f} kWh")
     col2.metric("Peak Detection Threshold (Sharp Increase)", f"{peak_threshold:.3f} kWh")
@@ -268,7 +367,7 @@ else:
     df_consumption = process_consumption_data(uploaded_file)
     if not df_consumption.empty:
         # Get all user inputs from the sidebar
-        start_date, end_date, flex_on_top, flex_fee, static_price, static_fee = get_sidebar_inputs(df_consumption)
+        start_date, end_date, flex_on_top, flex_fee, static_price, static_fee, shift_percentage = get_sidebar_inputs(df_consumption)
         
         # Load and merge data based on date range
         df_spot_prices = fetch_spot_data(start_date, end_date)
@@ -286,21 +385,24 @@ else:
                 absence_days = daily_consumption[daily_consumption < (base_threshold * 24 * 0.8)].index.tolist()
                 excluded_days = []
                 if absence_days:
-                    st.subheader("3. Absence Handling")
+                    st.subheader("4. Absence Handling")
                     if st.checkbox("Select/Deselect All Absence Days"):
                         excluded_days = st.multiselect("Exclude days?", options=absence_days, default=absence_days)
                     else:
                         excluded_days = st.multiselect("Exclude days?", options=absence_days, default=[])
 
             # Filter out excluded days for final analysis
-            df_analysis = df_classified[~df_classified["date_col"].isin(excluded_days)].copy() if excluded_days else df_classified.copy()
+            df_analysis = df_classified[~df_classified["date_col"].isin(excluded_days)].copy()
+            
+            # Apply simulation if requested
+            df_simulated = simulate_peak_shifting(df_analysis, shift_percentage)
             
             # Run final cost analysis on the clean data
-            df_final = run_cost_analysis(df_analysis, flex_on_top, flex_fee, static_price, static_fee)
+            df_final = run_cost_analysis(df_simulated, flex_on_top, flex_fee, static_price, static_fee)
             
             # Render all UI components
             render_recommendation(df_final)
-            tab1, tab2, tab3 = st.tabs(["Cost Comparison", "Usage Pattern Analysis", "Yearly Summary"])
+            tab1, tab2, tab3 = st.tabs(["**Cost Comparison**", "**Usage Pattern Analysis**", "**Yearly Summary**"])
             with tab1:
                 render_cost_comparison_tab(df_final)
             with tab2:
