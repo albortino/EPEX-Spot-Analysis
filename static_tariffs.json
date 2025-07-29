@@ -1,47 +1,51 @@
 [
   {
-    "name": "grünstrom classic (Grünwelt Energie)",
-    "on_top_price": 0.0990,
-    "monthly_fee": 5.00
-  },
-  {
     "name": "disk.strom (disk.energy)",
-    "on_top_price": 0.1150,
-    "monthly_fee": 1.66
+    "link": "https://www.e-control.at/c/portal/layout?p_l_id=1804911&_at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N_attachmentType=PRODUCT_PRICE_INFO&_at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N_productId=1097700&p_p_cacheability=cacheLevelPage&p_p_id=at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N&p_p_lifecycle=2&p_p_resource_id=downloadAttachment",
+    "price_kwh": 0.1308,
+    "monthly_fee": 2.00
   },
   {
-    "name": "Aquavento Grünstrom (Kittel Mühle)",
-    "on_top_price": 0.1200,
-    "monthly_fee": 3.00
+    "name": "V Strom Classic (Verbund",
+    "link": "https://www.verbund.com/de/privat/strom/verbund-strom",
+    "price_kwh": 0.1884,
+    "monthly_fee": 4.79
   },
   {
-    "name": "Ökostrom Fixtarif (RZ Pellets & Ökostrom)",
-    "on_top_price": 0.1225,
-    "monthly_fee": 4.95
+    "name": "Max Basic Strom (MAXENERGY)",
+    "link": "https://www.e-control.at/c/portal/layout?p_l_id=1804911&_at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N_attachmentType=PRODUCT_PRICE_INFO&_at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N_productId=1096619&p_p_cacheability=cacheLevelPage&p_p_id=at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N&p_p_lifecycle=2&p_p_resource_id=downloadAttachment",
+    "price_kwh": 0.156,
+    "monthly_fee": 6.00
   },
   {
-    "name": "Max Heimat Strom (MAXENERGY)",
-    "on_top_price": 0.1250,
-    "monthly_fee": 5.00
+    "name": "OPTIMA Entspannt plus (Wien Energie)",
+    "link": "https://www.wienenergie.at/privat/produkte/strom/optima-entspannt-plus/?options=SOPTB_0002-okopure-none",
+    "price_kwh": 0.158029,
+    "monthly_fee": 6.13155833
   },
   {
-    "name": "SWITCH: Nur sicher (Switch Energie)",
-    "on_top_price": 0.1250,
-    "monthly_fee": 5.00
+    "name": "voltino privat 24 (Wels Strom GmbH)",
+    "link": "https://www.e-control.at/c/portal/layout?p_l_id=1804911&_at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N_attachmentType=PRODUCT_PRICE_INFO&_at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N_productId=1096712&p_p_cacheability=cacheLevelPage&p_p_id=at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N&p_p_lifecycle=2&p_p_resource_id=downloadAttachment",
+    "price_kwh": 0.2028,
+    "monthly_fee": 5.88
+  },
+
+  {
+    "name": "oeko Fair (oekostrom)",
+    "link": "https://www.e-control.at/c/portal/layout?p_l_id=1804911&_at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N_attachmentType=PRODUCT_PRICE_INFO&_at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N_productId=1088643&p_p_cacheability=cacheLevelPage&p_p_id=at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N&p_p_lifecycle=2&p_p_resource_id=downloadAttachment",
+    "price_kwh": 0.1848,
+    "monthly_fee": 4.9917
   },
   {
-    "name": "Drei Strom (Drei Energie)",
-    "on_top_price": 0.1310,
-    "monthly_fee": 5.00
-  },
-  {
-    "name": "Aktiv Basismix ungebunden (Wien Energie)",
-    "on_top_price": 0.135162,
-    "monthly_fee": 4.17
+    "name": "Pullstrom Classic S (pullstrom)",
+    "link": "https://www.e-control.at/c/portal/layout?p_l_id=1804911&_at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N_attachmentType=PRODUCT_PRICE_INFO&_at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N_productId=1088645&p_p_cacheability=cacheLevelPage&p_p_id=at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N&p_p_lifecycle=2&p_p_resource_id=downloadAttachment",
+    "price_kwh": 0.1728,
+    "monthly_fee": 4.90
   },
   {
     "name": "E.ON Ökostrom Basis (E.ON Energie Österreich)",
-    "on_top_price": 0.13,
-    "monthly_fee": 4.50
+    "link": "https://www.e-control.at/c/portal/layout?p_l_id=1804911&_at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N_attachmentType=PRODUCT_PRICE_INFO&_at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N_productId=1096714&p_p_cacheability=cacheLevelPage&p_p_id=at_econtrol_rc_search_web_RcPublicWebPortlet_INSTANCE_XGD3jX0Z0z2N&p_p_lifecycle=2&p_p_resource_id=downloadAttachment",
+    "price_kwh": 0.282,
+    "monthly_fee": 5.40
   }
 ]

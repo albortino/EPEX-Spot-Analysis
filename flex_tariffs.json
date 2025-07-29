@@ -1,27 +1,43 @@
 [
   {
+    "name": "spottyDirekt (Spotty)",
+    "link": "https://www.spottyenergie.at",
+    "price_kwh": 0.02148,
+    "monthly_fee": 2.40
+  },
+  {
     "name": "smartCONTROL (smartENERGY)",
-    "on_top_price": 0.0144,
+    "link": "https://www.smartenergy.at/smartcontrol",
+    "price_kwh": 0.0144,
     "monthly_fee": 2.99
   },
   {
+    "name": "aWATTar HOURLY (aWATTar)",
+    "link": "https://www.awattar.at/tariffs/hourly",
+    "price_kwh": 0.018,
+    "monthly_fee": 5.75
+  },
+  {
     "name": "SteirerStrom Spot (Energie Steiermark)",
-    "on_top_price": 0.0144,
+    "link": "https://www.e-steiermark.com/privat/produkte/strom/spottarif",
+    "price_kwh": 0.0144,
     "monthly_fee": 3.82
   },
   {
     "name": "Oeko Spot+ (oekostrom)",
-    "on_top_price": 0.0180,
-    "monthly_fee": 1.80
+    "link": "https://oekostrom.at/spot-preis/",
+    "price_kwh": 0.0180,
+    "monthly_fee": 2.16
   },
   {
     "name": "wüsterstrom Spot (wüsterstrom)",
-    "on_top_price": 0.00, 
+    "link": "https://www.wuesterstrom.at/produkt/wuesterstrom-spot/",
+    "price_kwh": 0.0150, 
     "monthly_fee": 5.75
   },
   {
     "name": "Tulln Strom SPOT Stunde (TullnEnergie)",
-    "on_top_price": 0.00,
+    "price_kwh": 0.0456,
     "monthly_fee": 5.40
   }
 ]

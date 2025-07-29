@@ -15,7 +15,7 @@ class ConsumptionDataParser:
             self._try_default_format
         ]
 
-    def parse_file(self, uploaded_file) -> pd.DataFrame:
+    def parse_file(self, uploaded_file, aggregation_level: str = "h") -> pd.DataFrame:
         """
         Tries to parse the uploaded file with a series of parser methods.
         Returns a standardized DataFrame on success, or an empty one on failure.
@@ -23,15 +23,17 @@ class ConsumptionDataParser:
         if uploaded_file is None:
             return pd.DataFrame()
 
-        # Read file into memory to allow multiple parsing attempts
+        # Read file into memory to allow multiple parsing attempts.
         file_content = uploaded_file.getvalue().decode('utf-8')
 
         for parser_func in self._parsers:
             try:
                 df = parser_func(file_content)
                 if not df.empty and all(col in df.columns for col in ["timestamp", "consumption_kwh"]):
-                    # Standardize and resample
-                    df = df.set_index("timestamp")["consumption_kwh"].resample("15min").sum().dropna().reset_index()
+                    
+                    # Standardize and resample.
+                    df = df.set_index("timestamp")["consumption_kwh"].resample(aggregation_level).sum().dropna().reset_index()
+                        
                     return df
             except Exception:
                 continue # Try next parser

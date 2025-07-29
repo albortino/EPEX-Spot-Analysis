@@ -6,6 +6,7 @@ import json
 import random
 from tariffs import TariffManager, Tariff
 from consumption_parser import ConsumptionDataParser
+from methods import * # Core analysis methods
 
 # --- Page and App Configuration ---
 
@@ -22,13 +23,17 @@ STATIC_COLOR = "#989898"
 GREEN = "#5fba7d"
 RED = "#d65f5f"
 
+ABSENCE_THRESHOLD = 0.75
+
+AWATTAR_COUNTRY = "at" # or de
+
 # --- Data Loading and Caching ---
 
 @st.cache_data(ttl=3600)
 def fetch_spot_data(start: date, end: date) -> pd.DataFrame:
     
     """Fetches spot market price data from the aWATTar API for a given date range."""
-    base_url = "https://api.awattar.de/v1/marketdata"
+    base_url = f"https://api.awattar.{AWATTAR_COUNTRY}/v1/marketdata"
     start_dt, end_dt = datetime.combine(start, datetime.min.time()), datetime.combine(end + pd.Timedelta(days=1), datetime.min.time())
     params = {"start": int(start_dt.timestamp() * 1000),
               "end": int(end_dt.timestamp() * 1000)}
@@ -41,7 +46,7 @@ def fetch_spot_data(start: date, end: date) -> pd.DataFrame:
         
         df = pd.DataFrame(response.json()["data"])
         df["timestamp"] = pd.to_datetime(df["start_timestamp"], unit="ms", utc=True)
-        df["spot_price_eur_kwh"] = df["marketprice"] / 1000
+        df["spot_price_eur_kwh"] = df["marketprice"] / 1000 * 1.2 # Convert from Eur/MWh to c/kWh and add VAT
         return df[["timestamp", "spot_price_eur_kwh"]]
     
     except requests.exceptions.RequestException as e:
@@ -53,14 +58,14 @@ def fetch_spot_data(start: date, end: date) -> pd.DataFrame:
     return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
-def process_consumption_data(uploaded_file) -> pd.DataFrame:
+def process_consumption_data(uploaded_file, aggregation_level: str = "h") -> pd.DataFrame:
     """Loads and processes the user"s consumption CSV using the new parser."""
     
     if uploaded_file is None:
         return pd.DataFrame()
     try:
         parser = ConsumptionDataParser(local_timezone=LOCAL_TIMEZONE)
-        df = parser.parse_file(uploaded_file)
+        df = parser.parse_file(uploaded_file, aggregation_level)
         if df.empty:
             st.error("Could not parse the CSV file. Please ensure it is from a supported provider or in the default format.")
         return df
@@ -69,138 +74,6 @@ def process_consumption_data(uploaded_file) -> pd.DataFrame:
         st.error(f"An unexpected error occurred while processing the file: {e}")
         return pd.DataFrame()
 
-# --- Core Analysis Functions ---
-def classify_usage(df: pd.DataFrame) -> tuple[pd.DataFrame, float, float]:
-    """
-    Classifies hourly consumption into Base, Peak, and Regular load using a stateful approach.
-    A peak event starts with a sharp increase in consumption (trigger) and continues
-    as long as consumption remains above a high-usage sustain threshold.
-    Preferres data in 15-minute intervals, but returns a DataFrame with clusters for every hour.
-    """
-    if df.empty:
-        return df, 0.0, 0.0
-    
-    df_c = df.copy()
-    
-    # --- Base Load Calculation ---
-    # Find the most stable, lowest consumption period for each day to define the base load.
-    # This is more robust than assuming base load occurs at fixed night hours.
-    df_local = df_c.copy()
-    df_local["timestamp_local"] = df_local["timestamp"].dt.tz_convert(LOCAL_TIMEZONE)
-    df_local["date"] = df_local["timestamp_local"].dt.date
-    
-    # Calculate rolling metrics over a 3-hour window to find stable periods.
-    indexed_consumption = df_local.set_index("timestamp_local")["consumption_kwh"]    
-    df_local["rolling_std"] = indexed_consumption.rolling(window=3, center=True).std().values
-    df_local["rolling_mean"] = indexed_consumption.rolling(window=3, center=True).mean().values
-    
-    # For each day, find the point with the minimum rolling std dev (stability).
-    # In case of a tie, choose the one with the lower rolling mean (consumption).
-    stable_periods = df_local.dropna(subset=["rolling_std", "rolling_mean"]).sort_values(by=["rolling_std", "rolling_mean"])
-    daily_base_load_points = stable_periods.groupby("date").first()
-    base_load_threshold = daily_base_load_points["rolling_mean"].mean() if not daily_base_load_points.empty else 0.0
-
-    # --- Peak Load Calculation ---
-    # Influencable load is everything above the base load.
-    influenceable_load = (df_c["consumption_kwh"] - base_load_threshold).clip(lower=0)
-    consumption_diff = df_c["consumption_kwh"].diff().fillna(0)
-
-    # Sustain Threshold: A high level of consumption. We use a quantile on the *influenceable* load.
-    # This represents consumption significantly above the base.
-    peak_sustain_threshold_influenceable = influenceable_load[influenceable_load > 0.1].quantile(0.97)
-    peak_sustain_threshold_influenceable = 0.0 if pd.isna(peak_sustain_threshold_influenceable) else peak_sustain_threshold_influenceable
-    peak_sustain_threshold_absolute = base_load_threshold + peak_sustain_threshold_influenceable
-
-    # Trigger Threshold: A sharp increase from the previous hour (2x std dev of positive changes).
-    positive_diffs = consumption_diff[consumption_diff > 0.01]
-    peak_trigger_threshold = positive_diffs.std() * 2
-    peak_trigger_threshold = 0.0 if pd.isna(peak_trigger_threshold) else peak_trigger_threshold
-
-    # If sustain threshold is negligible, classify all influenceable load as "regular".
-    if peak_sustain_threshold_influenceable < 0.1:
-        df_c["base_load_kwh"] = df_c["consumption_kwh"].clip(upper=base_load_threshold)
-        df_c["peak_load_kwh"] = 0.0
-        df_c["regular_load_kwh"] = influenceable_load
-        return df_c, base_load_threshold, peak_sustain_threshold_influenceable
-
-    # Classification Loop
-    is_peak_list = []
-    in_peak_state = False
-    for i in range(len(df_c)):
-        is_trigger = consumption_diff.iloc[i] > peak_trigger_threshold
-        is_sustained = df_c["consumption_kwh"].iloc[i] > peak_sustain_threshold_absolute
-
-        if not in_peak_state:
-            # Start a new peak if a sharp increase pushes consumption above the sustain level
-            if is_trigger and is_sustained:
-                in_peak_state = True
-                
-        else:  # Already in a peak
-            # End the peak if consumption falls below the sustain level
-            if not is_sustained:
-                in_peak_state = False
-        is_peak_list.append(in_peak_state)
-    
-    is_peak = pd.Series(is_peak_list, index=df_c.index)
-
-    #  Assign load types based on classification
-    df_c["base_load_kwh"] = df_c["consumption_kwh"].clip(upper=base_load_threshold)
-    df_c["peak_load_kwh"] = influenceable_load.where(is_peak, 0)
-    df_c["regular_load_kwh"] = influenceable_load.where(~is_peak, 0)
-        
-    return df_c, base_load_threshold, peak_sustain_threshold_influenceable
-
-def simulate_peak_shifting(df: pd.DataFrame, shift_percentage: float) -> pd.DataFrame:
-    """
-    Simulates shifting a percentage of the total peak load volume by targeting
-    the most expensive peaks first and moving them to the cheapest hour
-    within a +/- 2-hour window. (Unchanged from original)
-    """
-    
-    if shift_percentage == 0:
-        return df
-
-    # Calculate the relative proportion of peak loads.
-    df_sim = df.copy()
-    total_peak_kwh = df_sim["peak_load_kwh"].sum()
-    kwh_to_shift_total = total_peak_kwh * (shift_percentage / 100.0)
-    if kwh_to_shift_total <= 0: return df_sim
-
-    # Get an additional DataFrame with all peaks.
-    peaks = df_sim[df_sim["peak_load_kwh"] > 0.001].copy()
-    if peaks.empty: return df_sim
-    
-    # Compute the costs for each peak and sort descending.
-    peaks["peak_cost"] = peaks["peak_load_kwh"] * peaks["spot_price_eur_kwh"]
-    sorted_peaks = peaks.sort_values(by="peak_cost", ascending=False)
-
-    shifted_load_additions = pd.Series(0.0, index=df_sim.index)
-
-    # Iterate over peaks and identify the cost savings when load is shifted to a cheaper time.
-    for peak_idx, peak_row in sorted_peaks.iterrows():
-        if kwh_to_shift_total <= 0: break
-        
-        # Calculate the time window (+/-2 hours).
-        current_timestamp = peak_row["timestamp"]
-        time_delta = pd.Timedelta(hours=2)
-        window_df = df_sim[(df_sim["timestamp"] >= current_timestamp - time_delta) & (df_sim["timestamp"] <= current_timestamp + time_delta)]
-        if window_df.empty: continue
-        
-        # Fnd cheapest hour in the window.
-        cheapest_hour_in_window = window_df.loc[window_df["spot_price_eur_kwh"].idxmin()]
-        
-        # Shift the load to the cheapest hour if cost savings might be achieved.
-        if cheapest_hour_in_window["spot_price_eur_kwh"] < peak_row["spot_price_eur_kwh"]:
-            kwh_in_this_peak = df_sim.loc[peak_idx, "peak_load_kwh"]
-            kwh_to_shift_now = min(kwh_in_this_peak, kwh_to_shift_total)
-            df_sim.loc[peak_idx, "peak_load_kwh"] -= kwh_to_shift_now
-            shifted_load_additions.loc[cheapest_hour_in_window.name] += kwh_to_shift_now
-            kwh_to_shift_total -= kwh_to_shift_now
-
-    df_sim["regular_load_kwh"] += shifted_load_additions
-    df_sim["consumption_kwh"] = df_sim["base_load_kwh"] + df_sim["regular_load_kwh"] + df_sim["peak_load_kwh"]
-    
-    return df_sim
 
 # --- UI and Rendering Functions ---
 
@@ -223,7 +96,7 @@ def get_sidebar_inputs(df_consumption: pd.DataFrame, tariff_manager: TariffManag
         with st.expander("Flexible (Spot Price) Plan", expanded=True):
             selected_flex_name = st.selectbox("Select Flexible Tariff", options=list(flex_tariff_options.keys()), index=len(flex_tariff_options)-1)
             selected_flex_tariff = flex_tariff_options[selected_flex_name]
-            flex_on_top = st.number_input("On-Top Price (€/kWh)", value=selected_flex_tariff.price_kwh, min_value=0.0, step=0.001, format="%.4f")
+            flex_on_top = st.number_input("On-Top Price (€/kWh)", value=selected_flex_tariff.price_kwh, min_value=0.0, step=0.01, format="%.4f")
             flex_fee = st.number_input("Monthly Fee (€)", value=selected_flex_tariff.monthly_fee, min_value=0.0, step=0.1)
             final_flex_tariff = Tariff(selected_flex_tariff.name, selected_flex_tariff.type, flex_on_top, flex_fee)
 
@@ -244,6 +117,7 @@ def render_recommendation(df: pd.DataFrame):
     st.subheader("Tariff Recommendation")
     savings = df["total_cost_static"].sum() - df["total_cost_flexible"].sum()
     
+    # Calculate proportion of consumption during low-cost (cheapest quartile) periods. 
     df["price_quantile"] = df.groupby(pd.Grouper(key="timestamp", freq="MS"))["spot_price_eur_kwh"].transform(lambda x: pd.qcut(x, 4, labels=False, duplicates="drop"))
     peak_total_kwh = df["peak_load_kwh"].sum()
     peak_cheap_kwh = df[df["price_quantile"] == 0]["peak_load_kwh"].sum()
@@ -262,6 +136,8 @@ def render_recommendation(df: pd.DataFrame):
 def render_cost_comparison_tab(df: pd.DataFrame):
     """Renders the content for the "Cost Comparison" tab."""
     st.subheader("Cost Breakdown by Period")
+    
+    # Aggregate DataFrame to the resolution of interest (e.g., daily, weekly, monthly).
     resolution = st.radio("Select Time Resolution", ("Daily", "Weekly", "Monthly"), horizontal=True, key="res")
     freq_map = {"Daily": "D", "Weekly": "W-MON", "Monthly": "ME"}
     grouper = pd.Grouper(key="timestamp", freq=freq_map[resolution])
@@ -299,14 +175,20 @@ def render_cost_comparison_tab(df: pd.DataFrame):
 def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_threshold: float):
     """Renders the content for the "Usage Pattern Analysis" tab."""
     st.subheader("Analyze Your Consumption Profile")
+    
+    # Get weekend/weekday information.
     df["day_type"] = df["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.dayofweek.apply(lambda x: "Weekend" if x >= 5 else "Weekday")
     day_filter = st.radio("Filter data by:", ("All Days", "Weekdays", "Weekends"), horizontal=True)
     
+    # Filter the dataframe for all day or weekend/weekday option.
     df_pattern = df[df["day_type"] == day_filter[:-1]] if day_filter != "All Days" else df
     
     if df_pattern.empty:
         st.warning(f"No data available for {day_filter.lower()}.")
         return
+    
+    # Get number of rows per day
+    intervals_per_day = df_pattern.groupby(df_pattern["timestamp"].dt.date).size().mode().iloc[0]
 
     st.subheader("Consumption & Cost Profile")
     st.text("If peak usage costs align with regular usage, significant cost-saving potential is possible.")
@@ -314,13 +196,16 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
     profile_data = []
     total_kwh = df_pattern["consumption_kwh"].sum()
 
+    # Calculate the average price and proportion of each load type.
     for load in load_types:
         kwh = df_pattern[load].sum()
+        kwh_mean = df_pattern[load].mean() * intervals_per_day
         if kwh > 0:
             avg_price = (df_pattern[load] * df_pattern["spot_price_eur_kwh"]).sum() / kwh
             proportion = kwh / total_kwh if total_kwh > 0 else 0
-            profile_data.append({"Profile": load.replace("_kwh", "").replace("_", " ").title(), "kwh": kwh, "avg_price": avg_price, "proportion": proportion})
+            profile_data.append({"Profile": load.replace("_kwh", "").replace("_", " ").title(), "kwh": kwh, "kwh_mean": kwh_mean, "avg_price": avg_price, "proportion": proportion})
     
+    # Build a Marimekko chart for every load type.
     if profile_data:
         df_plot = pd.DataFrame(profile_data)
         import matplotlib.pyplot as plt
@@ -329,7 +214,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         cumulative_width = 0
         for _, row in df_plot.iterrows():
             ax.bar(cumulative_width, row["avg_price"], width=row["proportion"], align="edge", color=FLEX_COLOR, edgecolor="white")
-            annotation_text = f"{row["Profile"]}\n{row["proportion"]:.1%} of kWh\n€{row["avg_price"]:.3f}/kWh"
+            annotation_text = f"{row["Profile"]}\n\n{row["proportion"]:.1%} of kWh\nAvg. {row["kwh_mean"]:.2f}/day\n€{row["avg_price"]:.3f}/kWh"
             ax.text(cumulative_width + row["proportion"]/2, row["avg_price"]/2, annotation_text, ha="center", va="center", color="white", fontsize=10, weight="bold")
             cumulative_width += row["proportion"]
             
@@ -342,6 +227,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         fig.tight_layout()
         st.pyplot(fig)
     
+    # Show the distribution of each load type on a random example.
     st.subheader("Example Day Breakdown")
     st.markdown("This chart visualizes when your high-consumption activities occur on a random day from your selection.")
     available_dates = df_pattern["timestamp"].dropna().dt.tz_convert(LOCAL_TIMEZONE).dt.date.unique()
@@ -359,10 +245,24 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
             st.session_state.random_day = random.choice(available_dates)
             st.rerun()
 
-        if not df_day.empty:
-            df_day["hour"] = df_day["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.hour
-            df_plot_day = df_day.set_index("hour")[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]].rename(columns={"base_load_kwh": "Base Load", "regular_load_kwh": "Regular Load", "peak_load_kwh": "Peak Load"})
-            st.bar_chart(df_plot_day, color=[STATIC_COLOR, FLEX_COLOR_LIGHT, FLEX_COLOR], y_label="Consumption (kWh)")
+    if not df_day.empty:
+        df_day["hour"] = df_day["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.hour
+
+        # Group by hour and sum the kWh columns
+        df_plot_day = (
+            df_day.groupby("hour")[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
+            .sum()
+            .rename(columns={
+                "base_load_kwh": "Base Load",
+                "regular_load_kwh": "Regular Load",
+                "peak_load_kwh": "Peak Load"
+            })
+        )
+
+        st.bar_chart(df_plot_day, color=[STATIC_COLOR, FLEX_COLOR_LIGHT, FLEX_COLOR], y_label="Consumption (kWh)")
+        
+    else:
+        st.warning("No data available for the selected day.")
     
     col1, col2 = st.columns(2)
     col1.metric("Base Load Threshold (Continuous Usage)", f"{base_threshold:.3f} kWh")
@@ -391,34 +291,41 @@ tariff_manager = TariffManager("flex_tariffs.json", "static_tariffs.json")
 if not uploaded_file:
     st.info("👋 Welcome! Please upload your consumption data to begin.")
 else:
-    df_consumption = process_consumption_data(uploaded_file)
+    df_consumption = process_consumption_data(uploaded_file, aggregation_level = "15min")
+    
     if not df_consumption.empty:
         start_date, end_date, flex_tariff, static_tariff, shift_percentage = get_sidebar_inputs(df_consumption, tariff_manager)
         
+        # Perform asof merge with price data to align each 15-min consumption row with the previous hourly price.
         df_spot_prices = fetch_spot_data(start_date, end_date)
-        df_merged = pd.merge(df_consumption, df_spot_prices, on="timestamp", how="inner")
+        df_merged = pd.merge_asof(df_consumption, df_spot_prices, on="timestamp", direction="backward", tolerance=pd.Timedelta("59min"))
         df_merged = df_merged[(df_merged.timestamp.dt.date >= start_date) & (df_merged.timestamp.dt.date <= end_date)].dropna()
-
+        df_merged["date_col"] = df_merged["timestamp"].dt.date
+        
         if not df_merged.empty:
-            df_classified, base_threshold, peak_threshold = classify_usage(df_merged)
+            intervals_per_day = df_merged.groupby("date_col").size().mode().iloc[0]
+            df_classified, base_threshold, peak_threshold = classify_usage(df_merged, LOCAL_TIMEZONE, intervals_per_day)        
             
+            # Add option to remove days with absence, that is when the daily consumption is lower than 80% of usual base threshold.
             with st.sidebar:
-                df_classified["date_col"] = df_classified["timestamp"].dt.date
                 daily_consumption = df_classified.groupby("date_col")["consumption_kwh"].sum()
-                absence_days = daily_consumption[daily_consumption < (base_threshold * 24 * 0.8)].index.tolist()
+                absence_days = daily_consumption[daily_consumption < (base_threshold * intervals_per_day * ABSENCE_THRESHOLD)].index.tolist()
                 excluded_days = []
                 if absence_days:
                     st.subheader("4. Absence Handling")
-                    select_all = st.checkbox("Select/Deselect All Absence Days", value=True)
+                    select_all = st.checkbox(f"Exclude all {len(absence_days)} Days Of Absence", value=True)
                     default_selection = absence_days if select_all else []
                     excluded_days = st.multiselect("Exclude days?", options=absence_days, default=default_selection)
 
+            # Remove absence days from DataFrame.
             df_analysis = df_classified[~df_classified["date_col"].isin(excluded_days)].copy()
-            df_simulated = simulate_peak_shifting(df_analysis, shift_percentage)
             
+            # Simulate peak shifting
+            df_simulated = simulate_peak_shifting(df_analysis, shift_percentage)
+
             # Use the new manager to run the final cost analysis
             df_final = tariff_manager.run_cost_analysis(df_simulated, flex_tariff, static_tariff)
-            
+
             render_recommendation(df_final)
             tab1, tab2, tab3 = st.tabs(["**Cost Comparison**", "**Usage Pattern Analysis**", "**Yearly Summary**"])
             with tab1:
