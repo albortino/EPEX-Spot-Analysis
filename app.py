@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 from datetime import datetime, date
 import json
+import io
 import random
 from tariffs import TariffManager, Tariff
 from parser import ConsumptionDataParser
@@ -77,6 +78,17 @@ def process_consumption_data(uploaded_file, aggregation_level: str = "h") -> pd.
 
 # --- UI and Rendering Functions ---
 
+@st.cache_data
+def to_excel(df: pd.DataFrame) -> bytes:
+    """Converts a DataFrame to an Excel file in-memory."""
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df["timestamp"] = df["timestamp"].dt.tz_localize(None)
+        df.to_excel(writer, index=False, sheet_name='AnalysisData')
+    processed_data = output.getvalue()
+    return processed_data
+
+
 def get_sidebar_inputs(df_consumption: pd.DataFrame, tariff_manager: TariffManager):
     """Renders all sidebar inputs and returns the configuration values."""
     with st.sidebar:
@@ -89,23 +101,52 @@ def get_sidebar_inputs(df_consumption: pd.DataFrame, tariff_manager: TariffManag
         end_date = col2.date_input("End Date", max_date, min_value=min_date, max_value=max_date)
         
         st.subheader("2. Tariff Plans")
-        st.text("Choose a tariff or adjust parameters.")
+        st.text("Choose a tariff or adjust parameters by providing the gross costs (incl. VAT).")
+        
+        # Checkbox to compare the cheapest tariffs
+        compare_cheapest = st.checkbox("Compare cheapest tariffs", value=False)
+        
         flex_tariff_options = tariff_manager.get_flex_tariffs_with_custom()
         static_tariff_options = tariff_manager.get_static_tariffs_with_custom()
+        
+        if compare_cheapest:
+            # Calculate total costs for all tariffs for the selected period
+            total_costs = {}
+            consumption_sum = df_consumption["consumption_kwh"].sum()
+            months = (end_date - start_date).days / 30.44  # Approximate months
+            
+            for tariff in flex_tariff_options.values():
+                cost = (consumption_sum * tariff.price_kwh * (1 + tariff.price_kwh_pct/100)) + (tariff.monthly_fee * months)
+                total_costs[("flex", tariff.name)] = cost
+                
+            for tariff in static_tariff_options.values():
+                cost = (consumption_sum * tariff.price_kwh) + (tariff.monthly_fee * months)
+                total_costs[("static", tariff.name)] = cost
+            
+            # Get cheapest flex and static tariffs
+            cheapest_flex = min((k for k in total_costs.keys() if k[0] == "flex"), key=lambda k: total_costs[k])
+            cheapest_static = min((k for k in total_costs.keys() if k[0] == "static"), key=lambda k: total_costs[k])
+            
+            final_flex_tariff = flex_tariff_options[cheapest_flex[1]]
+            final_static_tariff = static_tariff_options[cheapest_static[1]]
+            
+            st.info(f"Flex: {final_flex_tariff.name}\n\nStatic: {final_static_tariff.name}")
+            
+        else:
+            with st.expander("Flexible (Spot Price) Plan", expanded=True):
+                selected_flex_name = st.selectbox("Select Flexible Tariff", options=list(flex_tariff_options.keys()), index=len(flex_tariff_options)-1)
+                selected_flex_tariff = flex_tariff_options[selected_flex_name]
+                flex_on_top = st.number_input("On-Top Price (€/kWh)", value=selected_flex_tariff.price_kwh, min_value=0.0, step=0.01, format="%.4f")
+                flex_on_top_perc = st.number_input("Variable On-Top Price (%/kWh)", value=selected_flex_tariff.price_kwh_pct, min_value=0.0, max_value=100.0, step=1.0, format="%.1f")
+                flex_fee = st.number_input("Monthly Fee (€)", value=selected_flex_tariff.monthly_fee, min_value=0.0, step=0.1)
+                final_flex_tariff = Tariff(name=selected_flex_tariff.name, type=selected_flex_tariff.type, price_kwh=flex_on_top, monthly_fee=flex_fee, price_kwh_pct=flex_on_top_perc)
 
-        with st.expander("Flexible (Spot Price) Plan", expanded=True):
-            selected_flex_name = st.selectbox("Select Flexible Tariff", options=list(flex_tariff_options.keys()), index=len(flex_tariff_options)-1)
-            selected_flex_tariff = flex_tariff_options[selected_flex_name]
-            flex_on_top = st.number_input("On-Top Price (€/kWh)", value=selected_flex_tariff.price_kwh, min_value=0.0, step=0.01, format="%.4f")
-            flex_fee = st.number_input("Monthly Fee (€)", value=selected_flex_tariff.monthly_fee, min_value=0.0, step=0.1)
-            final_flex_tariff = Tariff(selected_flex_tariff.name, selected_flex_tariff.type, flex_on_top, flex_fee)
-
-        with st.expander("Static (Fixed Price) Plan"):
-            selected_static_name = st.selectbox("Select Static Tariff", options=list(static_tariff_options.keys()), index=len(static_tariff_options)-1)
-            selected_static_tariff = static_tariff_options[selected_static_name]
-            static_price = st.number_input("Fixed Price (€/kWh)", value=selected_static_tariff.price_kwh, min_value=0.0, step=0.01)
-            static_fee = st.number_input("Monthly Fee (€)", value=selected_static_tariff.monthly_fee, min_value=0.0, step=0.1)
-            final_static_tariff = Tariff(selected_static_tariff.name, selected_static_tariff.type, static_price, static_fee)
+            with st.expander("Static (Fixed Price) Plan"):
+                selected_static_name = st.selectbox("Select Static Tariff", options=list(static_tariff_options.keys()), index=len(static_tariff_options)-1)
+                selected_static_tariff = static_tariff_options[selected_static_name]
+                static_price = st.number_input("Fixed Price (€/kWh)", value=selected_static_tariff.price_kwh, min_value=0.0, step=0.01)
+                static_fee = st.number_input("Monthly Fee (€)", value=selected_static_tariff.monthly_fee, min_value=0.0, step=0.1)
+                final_static_tariff = Tariff(selected_static_tariff.name, selected_static_tariff.type, static_price, static_fee)
 
         st.subheader("3. Cost Simulation", help="Simulate shifting a percentage of your peak consumption to a cheaper hour within a +/- 2-hour window.")
         shift_percentage = st.slider("Shift Peak Load (%)", 0, 100, 0, 5)
@@ -219,9 +260,12 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
             
         ax.set_ylabel("Average Spot Price (€/kWh)")
         ax.set_xlabel("Proportion of Total Consumption")
+        
+        xticks = [0, 0.25, 0.5, 0.75, 1]
+        
         ax.set_xlim(0, 1)
-        ax.set_xticks([0, 0.25, 0.5, 0.75, 1])
-        ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
+        ax.set_xticks(xticks)
+        ax.set_xticklabels([f"{int(x*100)}%" for t in xticks])
         ax.grid(axis="y", linestyle="--", alpha=0.7)
         fig.tight_layout()
         st.pyplot(fig, use_container_width=False)
@@ -282,6 +326,35 @@ def render_yearly_summary_tab(df: pd.DataFrame):
         yearly_agg["Avg. Static Price (€/kWh)"] = yearly_agg["Total Static Cost"] / yearly_agg["Total Consumption"]
         st.dataframe(yearly_agg.style.format({"Total Consumption": "{:,.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Avg. Flex Price (€/kWh)": "€{:.3f}", "Avg. Static Price (€/kWh)": "€{:.3f}"}), hide_index=True, use_container_width=True)
 
+def render_download_tab(df_final: pd.DataFrame, start_date: date, end_date: date):
+    """Renders the content for the "Download as Excel" tab."""
+    st.text("Download the detailed data with cost calculations and usage classification as an Excel file.")
+    excel_data = to_excel(df_final)
+    st.download_button(
+        label="Download .xlsx",
+        data=excel_data,
+        file_name=f"electricity_analysis_{start_date}_to_{end_date}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+       
+
+def compute_absence_days(df_classified: pd.DataFrame, base_threshold: float, absence_threshold: float) -> pd.DataFrame:
+    """Add option to remove days with absence, that is when the daily consumption is lower than 80% of usual base threshold."""
+    with st.sidebar:
+
+        daily_consumption = df_classified.groupby("date_col")["consumption_kwh"].sum()
+        absence_days = daily_consumption[daily_consumption < (base_threshold * intervals_per_day * absence_threshold)].index.tolist()
+        excluded_days = []
+        if absence_days:
+            st.subheader("4. Absence Handling", help=f"Remove days with extremely low consumption (below {absence_threshold}%). Yields more robust data for analyses.")
+            select_all = st.checkbox(f"Exclude all {len(absence_days)} Days Of Absence", value=False)
+            default_selection = absence_days if select_all else []
+            excluded_days = st.multiselect("Exclude days?", options=absence_days, default=default_selection)
+            
+    return df_classified[~df_classified["date_col"].isin(excluded_days)].copy()        
+        
+
+         
 # --- Main Application ---
 uploaded_file = st.sidebar.file_uploader("Upload Your Consumption CSV", type=["csv"])
 
@@ -311,19 +384,7 @@ else:
             intervals_per_day = df_merged.groupby("date_col").size().mode().iloc[0]
             df_classified, base_threshold, peak_threshold = classify_usage(df_merged, LOCAL_TIMEZONE, intervals_per_day)        
             
-            # Add option to remove days with absence, that is when the daily consumption is lower than 80% of usual base threshold.
-            with st.sidebar:
-                daily_consumption = df_classified.groupby("date_col")["consumption_kwh"].sum()
-                absence_days = daily_consumption[daily_consumption < (base_threshold * intervals_per_day * ABSENCE_THRESHOLD)].index.tolist()
-                excluded_days = []
-                if absence_days:
-                    st.subheader("4. Absence Handling", help=f"Remove days with extremely low consumption (below {ABSENCE_THRESHOLD}%). Yields more robust data for analyses.")
-                    select_all = st.checkbox(f"Exclude all {len(absence_days)} Days Of Absence", value=False)
-                    default_selection = absence_days if select_all else []
-                    excluded_days = st.multiselect("Exclude days?", options=absence_days, default=default_selection)
-
-            # Remove absence days from DataFrame.
-            df_analysis = df_classified[~df_classified["date_col"].isin(excluded_days)].copy()
+            df_analysis = compute_absence_days(df_classified, base_threshold, ABSENCE_THRESHOLD)
             
             # Simulate peak shifting
             df_simulated = simulate_peak_shifting(df_analysis, shift_percentage)
@@ -332,12 +393,16 @@ else:
             df_final = tariff_manager.run_cost_analysis(df_simulated, flex_tariff, static_tariff)
 
             render_recommendation(df_final)
-            tab1, tab2, tab3 = st.tabs(["**Cost Comparison**", "**Usage Pattern Analysis**", "**Yearly Summary**"])
+
+            tab1, tab2, tab3, tab4 = st.tabs(["**Cost Comparison**", "**Usage Pattern Analysis**", "**Yearly Summary**", "**Download as Excel**"])
             with tab1:
                 render_cost_comparison_tab(df_final)
             with tab2:
                 render_usage_pattern_tab(df_final, base_threshold, peak_threshold)
             with tab3:
                 render_yearly_summary_tab(df_final)
+            with tab4:
+                render_download_tab(df_final, start_date, end_date)
+        
         else:
             st.warning("No overlapping data found for the selected period.")

@@ -15,6 +15,7 @@
     "name": "aWATTar HOURLY (aWATTar)",
     "link": "https://www.awattar.at/tariffs/hourly",
     "price_kwh": 0.018,
+    "price_kwh_pct": 3.6,
     "monthly_fee": 5.75
   },
   {

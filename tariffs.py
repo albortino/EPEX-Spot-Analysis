@@ -19,6 +19,7 @@ class Tariff:
     type: TariffType
     price_kwh: float  # For FLEXIBLE, it's the on-top price. For STATIC, it's the fixed price.
     monthly_fee: float
+    price_kwh_pct: float = 0.0 # Percentage on-top for flexible tariffs
     link: str = ""
 
 class TariffManager:
@@ -40,7 +41,8 @@ class TariffManager:
                         type=tariff_type,
                         price_kwh=item.get("price_kwh", 0.0),
                         monthly_fee=item.get("monthly_fee", 0.0),
-                        link=item.get("link", "")
+                        link=item.get("link", ""),
+                        price_kwh_pct=item.get("price_kwh_pct", 0.0)
                     ) for item in tariff_data
                 ]
                 
@@ -56,7 +58,7 @@ class TariffManager:
         """Returns a dictionary of flexible tariffs including a default custom option."""
         
         tariffs = {tariff.name: tariff for tariff in self.flex_tariffs}
-        tariffs["Custom"] = Tariff(name="Custom", type=TariffType.FLEXIBLE, price_kwh=0.0215, monthly_fee=2.40)
+        tariffs["Custom"] = Tariff(name="Custom", type=TariffType.FLEXIBLE, price_kwh=0.0215, monthly_fee=2.40, price_kwh_pct=0.0)
         return tariffs
 
     def get_static_tariffs_with_custom(self) -> Dict[str, Tariff]:
@@ -78,7 +80,8 @@ class TariffManager:
         df_costs["days_in_month"] = df_costs["timestamp"].dt.days_in_month
         
         # Calculate total cost per time resolution (hour or 15 minutes) for both tariffs
-        flex_total_kwh_price = df_costs["spot_price_eur_kwh"] + flex_tariff.price_kwh
+        flex_spot_price_component = df_costs["spot_price_eur_kwh"] * (1 + flex_tariff.price_kwh_pct / 100)
+        flex_total_kwh_price = flex_spot_price_component + flex_tariff.price_kwh
         flex_fee = (flex_tariff.monthly_fee / df_costs["days_in_month"]) / intervals_per_day
         static_fee = (static_tariff.monthly_fee / df_costs["days_in_month"]) / intervals_per_day
 
