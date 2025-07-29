@@ -18,7 +18,7 @@ class ConsumptionDataParser:
     def parse_file(self, uploaded_file, aggregation_level: str = "h") -> pd.DataFrame:
         """
         Tries to parse the uploaded file with a series of parser methods.
-        Returns a standardized DataFrame on success, or an empty one on failure.
+        Returns a standardized DataFrame on success, or an empty one on failure. Normalized to UTC date.
         """
         if uploaded_file is None:
             return pd.DataFrame()
@@ -40,7 +40,6 @@ class ConsumptionDataParser:
 
         # If all parsers fail, return empty
         return pd.DataFrame()
-
 
     def _try_default_format(self, file_content: str) -> pd.DataFrame:
         """Parses the original format: 'Datum;Zeit von;Verbrauch [kWh]'."""

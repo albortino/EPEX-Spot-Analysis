@@ -5,7 +5,7 @@ from datetime import datetime, date
 import json
 import random
 from tariffs import TariffManager, Tariff
-from consumption_parser import ConsumptionDataParser
+from parser import ConsumptionDataParser
 from methods import * # Core analysis methods
 
 # --- Page and App Configuration ---
@@ -107,8 +107,8 @@ def get_sidebar_inputs(df_consumption: pd.DataFrame, tariff_manager: TariffManag
             static_fee = st.number_input("Monthly Fee (€)", value=selected_static_tariff.monthly_fee, min_value=0.0, step=0.1)
             final_static_tariff = Tariff(selected_static_tariff.name, selected_static_tariff.type, static_price, static_fee)
 
-        st.subheader("3. Cost Simulation")
-        shift_percentage = st.slider("Shift Peak Load (%)", 0, 100, 0, 5, help="Simulate shifting a percentage of your peak consumption to a cheaper hour within a +/- 2-hour window.")
+        st.subheader("3. Cost Simulation", help="Simulate shifting a percentage of your peak consumption to a cheaper hour within a +/- 2-hour window.")
+        shift_percentage = st.slider("Shift Peak Load (%)", 0, 100, 0, 5)
 
         return start_date, end_date, final_flex_tariff, final_static_tariff, shift_percentage
 
@@ -142,10 +142,10 @@ def render_cost_comparison_tab(df: pd.DataFrame):
     freq_map = {"Daily": "D", "Weekly": "W-MON", "Monthly": "ME"}
     grouper = pd.Grouper(key="timestamp", freq=freq_map[resolution])
 
-    df_summary = df.groupby(grouper).agg(
-        **{"Total Consumption": ("consumption_kwh", "sum"), "Total Flexible Cost": ("total_cost_flexible", "sum"), "Total Static Cost": ("total_cost_static", "sum")}
-    ).reset_index()
-    df_summary = df_summary[df_summary["Total Consumption"] > 0].copy()
+    summary_agg_dict = {"Total Consumption": ("consumption_kwh", "sum"), "Total Flexible Cost": ("total_cost_flexible", "sum"), "Total Static Cost": ("total_cost_static", "sum")}
+    df_summary = df.groupby(grouper).agg(**summary_agg_dict).reset_index()
+    df_summary = df_summary[df_summary["Total Consumption"] > 0]
+    
     
     if not df_summary.empty:
         df_summary["Period"] = df_summary["timestamp"].dt.strftime("%Y-%m-%d" if resolution != "Monthly" else "%Y-%m")
@@ -167,9 +167,8 @@ def render_cost_comparison_tab(df: pd.DataFrame):
         st.subheader("Tariff Comparison")
         st.text("Shows the total and per kWh costs for both tariffs, as well as the difference in €.")
         df_summary["Difference (€)"] = df_summary["Total Static Cost"] - df_summary["Total Flexible Cost"]
-        styler = df_summary[["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]].style.format({
-            "Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"
-        }).map(lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}", subset=["Difference (€)"])
+        df_summary = df_summary[["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]]
+        styler = df_summary.style.format({"Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"}).map(lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}", subset=["Difference (€)"])
         st.dataframe(styler, hide_index=True, use_container_width=True)
 
 def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_threshold: float):
@@ -225,7 +224,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
         ax.grid(axis="y", linestyle="--", alpha=0.7)
         fig.tight_layout()
-        st.pyplot(fig)
+        st.pyplot(fig, use_container_width=False)
     
     # Show the distribution of each load type on a random example.
     st.subheader("Example Day Breakdown")
@@ -275,12 +274,13 @@ def render_yearly_summary_tab(df: pd.DataFrame):
     st.subheader("Yearly Summary")
     df_yearly = df.copy()
     df_yearly["Year"] = df_yearly["timestamp"].dt.year
-    yearly_agg = df_yearly.groupby("Year").agg(**{"Total Consumption": ("consumption_kwh", "sum"), "Total Flexible Cost":("total_cost_flexible", "sum"), "Total Static Cost": ("total_cost_static", "sum")}).reset_index()
+    yearly_summary_agg_dict = {"Total Consumption": ("consumption_kwh", "sum"), "Total Flexible Cost":("total_cost_flexible", "sum"), "Total Static Cost": ("total_cost_static", "sum")}
+    yearly_agg = df_yearly.groupby("Year").agg(**yearly_summary_agg_dict).reset_index()
     
     if not yearly_agg.empty and yearly_agg["Total Consumption"].sum() > 0:
         yearly_agg["Avg. Flex Price (€/kWh)"] = yearly_agg["Total Flexible Cost"] / yearly_agg["Total Consumption"]
         yearly_agg["Avg. Static Price (€/kWh)"] = yearly_agg["Total Static Cost"] / yearly_agg["Total Consumption"]
-        st.dataframe(yearly_agg.style.format({"Total Consumption": "{:,.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Avg. Flex Price (€/kWh)": "€{:.2f}", "Avg. Static Price (€/kWh)": "€{:.3f}"}), hide_index=True, use_container_width=True)
+        st.dataframe(yearly_agg.style.format({"Total Consumption": "{:,.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Avg. Flex Price (€/kWh)": "€{:.3f}", "Avg. Static Price (€/kWh)": "€{:.3f}"}), hide_index=True, use_container_width=True)
 
 # --- Main Application ---
 uploaded_file = st.sidebar.file_uploader("Upload Your Consumption CSV", type=["csv"])
@@ -300,7 +300,12 @@ else:
         df_spot_prices = fetch_spot_data(start_date, end_date)
         df_merged = pd.merge_asof(df_consumption, df_spot_prices, on="timestamp", direction="backward", tolerance=pd.Timedelta("59min"))
         df_merged = df_merged[(df_merged.timestamp.dt.date >= start_date) & (df_merged.timestamp.dt.date <= end_date)].dropna()
+        
+        # Convert dataframe to local timezone again
+        df_merged["timestamp"] = df_merged["timestamp"].dt.tz_convert(LOCAL_TIMEZONE) 
+                
         df_merged["date_col"] = df_merged["timestamp"].dt.date
+        
         
         if not df_merged.empty:
             intervals_per_day = df_merged.groupby("date_col").size().mode().iloc[0]
@@ -312,8 +317,8 @@ else:
                 absence_days = daily_consumption[daily_consumption < (base_threshold * intervals_per_day * ABSENCE_THRESHOLD)].index.tolist()
                 excluded_days = []
                 if absence_days:
-                    st.subheader("4. Absence Handling")
-                    select_all = st.checkbox(f"Exclude all {len(absence_days)} Days Of Absence", value=True)
+                    st.subheader("4. Absence Handling", help=f"Remove days with extremely low consumption (below {ABSENCE_THRESHOLD}%). Yields more robust data for analyses.")
+                    select_all = st.checkbox(f"Exclude all {len(absence_days)} Days Of Absence", value=False)
                     default_selection = absence_days if select_all else []
                     excluded_days = st.multiselect("Exclude days?", options=absence_days, default=default_selection)
 
