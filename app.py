@@ -32,55 +32,6 @@ SPOT_PRICE_CACHE_FILE = "spot_prices.csv"
 AWATTAR_COUNTRY = "at" # or de
 
 # --- Data Loading and Caching ---
-
-def _load_from_cache(file_path: str) -> pd.DataFrame:
-    """Loads the stored EPEX prices from the local cache."""
-    try:
-        df_cache = pd.read_csv(file_path, parse_dates=["timestamp"])
-        df_cache["timestamp"] = pd.to_datetime(df_cache["timestamp"], utc=True)
-        return df_cache
-    
-    except Exception as e:
-        st.warning(f"Could not read or parse cache file '{SPOT_PRICE_CACHE_FILE}'. Refetching data. Error: {e}")
-        return pd.DataFrame()
-
-def _fetch_spot_data(start: date, end: date) -> pd.DataFrame:
-    """Fetches the spot data from the aWATTar API for a given date range."""
-    
-    base_url = f"https://api.awattar.{AWATTAR_COUNTRY}/v1/marketdata"
-    start_dt, end_dt = datetime.combine(start, datetime.min.time()), datetime.combine(end + pd.Timedelta(days=1), datetime.min.time())
-    params = {"start": int(start_dt.timestamp() * 1000),
-              "end": int(end_dt.timestamp() * 1000)}
-    
-    try:
-        print(f"{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}: Will fetch data from Awattar.")
-        
-        response = requests.get(base_url, params=params)
-        response.raise_for_status()
-            
-        data = response.json()["data"]
-        if not data:
-            st.warning("API returned no data for the selected period.")
-            return pd.DataFrame()
-
-        df = pd.DataFrame(data)
-        df["timestamp"] = pd.to_datetime(df["start_timestamp"], unit="ms", utc=True)
-        df["spot_price_eur_kwh"] = df["marketprice"] / 1000 * 1.2 # Convert from Eur/MWh to c/kWh and add VAT
-        
-        df_to_return = df[["timestamp", "spot_price_eur_kwh"]]        
-        df_to_return.to_csv(SPOT_PRICE_CACHE_FILE, index=False)
-
-        return df_to_return    
-
-    except requests.exceptions.RequestException as e:
-        st.error(f"Failed to fetch spot price data: {e}")
-        
-    except (KeyError, IndexError, TypeError):
-        st.error("Received unexpected data from the spot price API.")
-
-    return pd.DataFrame()
-
-
 @st.cache_data(ttl=3600)
 def get_spot_data(start: date, end: date) -> pd.DataFrame:
     """
@@ -139,6 +90,7 @@ def to_excel(df: pd.DataFrame) -> bytes:
     processed_data = output.getvalue()
     return processed_data
 
+@st.cache_data(ttl=3600)
 def _get_min_max_date(df: pd.DataFrame) -> tuple[date, date]:
     """Returns the minimum and maximum dates from a DataFrame with timestamp column."""
     min_date = df["timestamp"].min().date()
@@ -148,6 +100,56 @@ def _get_min_max_date(df: pd.DataFrame) -> tuple[date, date]:
     max_date = df["timestamp"].max().date()
     
     return min_date, max_date
+
+@st.cache_data(ttl=60*10) # 10 minutes validity if the input does not change
+def _compare_all_tariffs(df: pd.DataFrame, flex_tariff_options: dict[str, Tariff], static_tariff_options: dict[str, Tariff]) -> tuple[Tariff, Tariff]:
+    # Calculate total costs for all tariffs using the accurate methods from TariffManager
+    print(f"{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}: Calculating comparison")
+    
+    total_costs = {}
+    for name, tariff in flex_tariff_options.items():
+        if name == "Custom": continue  # Exclude the editable "Custom" tariff from comparison
+        total_costs[("flex", name)] = tariff_manager._calculate_flexible_cost(df.copy(), tariff).sum()
+    
+    for name, tariff in static_tariff_options.items():
+        if name == "Custom": continue  # Exclude the editable "Custom" tariff from comparison
+        total_costs[("static", name)] = tariff_manager._calculate_static_cost(df.copy(), tariff).sum()
+    
+    # Identify the cheapest flex and static tariffs
+    cheapest_flex_key = min((k for k in total_costs if k[0] == "flex"), key=total_costs.get)
+    cheapest_static_key = min((k for k in total_costs if k[0] == "static"), key=total_costs.get)
+    
+    final_flex_tariff = flex_tariff_options[cheapest_flex_key[1]]
+    final_static_tariff = static_tariff_options[cheapest_static_key[1]]
+    
+    return final_flex_tariff, final_static_tariff    
+
+def _return_tariff_selection(flex_tariff_options: dict[str, Tariff], static_tariff_options: dict[str, Tariff]) -> tuple[Tariff, Tariff]:
+    final_tariffs = []
+    for title, tariff in zip(["Flexible (Spot Price) Plan", "Static (Fixed Price) Plan"], [flex_tariff_options, static_tariff_options]):
+        
+        with st.expander(title, expanded=True):
+            type_from_title = title.split(" ")[0]
+
+            # Select a tariff.
+            selected_name = st.selectbox(f"Select {type_from_title} Tariff", options=list(tariff.keys()), index=len(tariff)-1)
+            selected_tariff = tariff[selected_name]
+            
+            # Create the input fields with pre-set values based on the custom tariff or pre-selected tariff.
+            on_top = st.number_input("On-Top Price (€/kWh)", value=selected_tariff.price_kwh, min_value=0.0, step=0.01, format="%.4f")
+            
+            if type_from_title == "Flexible":
+                on_top_perc = st.number_input("Variable Price (% of EPEX)", value=selected_tariff.price_kwh_pct, min_value=0.0, max_value=100.0, step=1.0, format="%.1f", key=f"{type_from_title}_on_top_perc")
+            else:
+                on_top_perc = 0.0
+            
+            fee = st.number_input("Monthly Fee (€)", value=selected_tariff.monthly_fee, min_value=0.0, step=0.1)
+            
+            # Create the tariff instance and append it to a list that will be returned.
+            final_tariff = Tariff(name=selected_tariff.name, type=selected_tariff.type, price_kwh=on_top, monthly_fee=fee, price_kwh_pct=on_top_perc)
+            final_tariffs.append(final_tariff)
+
+    return tuple(final_tariffs)
 
 def get_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager):
     """Renders all sidebar inputs and returns the configuration values."""
@@ -175,55 +177,12 @@ def get_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager):
         static_tariff_options = tariff_manager.get_static_tariffs_with_custom()
         
         if compare_cheapest:
-            # Calculate total costs for all tariffs using the accurate methods from TariffManager
-            print(f"{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}: Calculating comparison")
-            
-            total_costs = {}
-            for name, tariff in flex_tariff_options.items():
-                if name == "Custom": continue  # Exclude the editable "Custom" tariff from comparison
-                total_costs[("flex", name)] = tariff_manager._calculate_flexible_cost(df.copy(), tariff).sum()
-            
-            for name, tariff in static_tariff_options.items():
-                if name == "Custom": continue  # Exclude the editable "Custom" tariff from comparison
-                total_costs[("static", name)] = tariff_manager._calculate_static_cost(df.copy(), tariff).sum()
-            
-            # Identify the cheapest flex and static tariffs
-            cheapest_flex_key = min((k for k in total_costs if k[0] == "flex"), key=total_costs.get)
-            cheapest_static_key = min((k for k in total_costs if k[0] == "static"), key=total_costs.get)
-            
-            final_flex_tariff = flex_tariff_options[cheapest_flex_key[1]]
-            final_static_tariff = static_tariff_options[cheapest_static_key[1]]
-        
+            # Set the cheapest static and flexible tariff
+            final_flex_tariff, final_static_tariff = _compare_all_tariffs(df, flex_tariff_options, static_tariff_options)    
             st.info(f"Cheapest Flex Tariff:\n\n**{final_flex_tariff.name}**\n\nCheapest Static Tariff:\n\n**{final_static_tariff.name}**")
-    
-        
         else:
             # Generate two expander fields to preselect or edit tariffs.
-            final_tariffs = []
-            for title, tariff in zip(["Flexible (Spot Price) Plan", "Static (Fixed Price) Plan"], [flex_tariff_options, static_tariff_options]):
-                
-                with st.expander(title, expanded=True):
-                    type_from_title = title.split(" ")[0]
-
-                    # Select a tariff.
-                    selected_name = st.selectbox(f"Select {type_from_title} Tariff", options=list(tariff.keys()), index=len(tariff)-1)
-                    selected_tariff = tariff[selected_name]
-                    
-                    # Create the input fields with pre-set values based on the custom tariff or pre-selected tariff.
-                    on_top = st.number_input("On-Top Price (€/kWh)", value=selected_tariff.price_kwh, min_value=0.0, step=0.01, format="%.4f")
-                    
-                    if type_from_title == "Flexible":
-                        on_top_perc = st.number_input("Variable Price (% of EPEX)", value=selected_tariff.price_kwh_pct, min_value=0.0, max_value=100.0, step=1.0, format="%.1f", key=f"{type_from_title}_on_top_perc")
-                    else:
-                        on_top_perc = 0.0
-                    
-                    fee = st.number_input("Monthly Fee (€)", value=selected_tariff.monthly_fee, min_value=0.0, step=0.1)
-                    
-                    # Create the tariff instance and append it to a list that will be returned.
-                    final_tariff = Tariff(name=selected_tariff.name, type=selected_tariff.type, price_kwh=on_top, monthly_fee=fee, price_kwh_pct=on_top_perc)
-                    final_tariffs.append(final_tariff)
-            
-            final_flex_tariff, final_static_tariff = final_tariffs
+            final_flex_tariff, final_static_tariff = _return_tariff_selection(flex_tariff_options, static_tariff_options)
             
         # Define how much of the peak consumption is shifted to the cheapest hour within a 2 hour timespan. 
         st.subheader("3. Cost Simulation", help="Simulate shifting a percentage of your peak consumption to a cheaper hour within a +/- 2-hour window.")
@@ -231,8 +190,11 @@ def get_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager):
 
         return start_date, end_date, final_flex_tariff, final_static_tariff, shift_percentage
 
+@st.cache_data(ttl=3600)
 def render_recommendation(df: pd.DataFrame):
     """Displays the final tariff recommendation based on calculated savings."""
+    print(f"{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}: Rendering Recommendation")
+
     st.subheader("Tariff Recommendation")
     savings = df["total_cost_static"].sum() - df["total_cost_flexible"].sum()
     
@@ -267,10 +229,9 @@ def render_cost_comparison_tab(df: pd.DataFrame):
     df_summary = df.groupby(grouper).agg(**summary_agg_dict).reset_index()
     df_summary = df_summary[df_summary["Total Consumption"] > 0]
     
-    
     if not df_summary.empty:
         df_summary["Period"] = df_summary["timestamp"].dt.strftime("%Y-%m-%d" if resolution != "Monthly" else "%Y-%m")
-        st.subheader("Total Cost Comparison")
+        st.subheader("Total Costs per Period")
         st.text("Shows the total cost per period (energy costs on the bill).")
         
         # Line Chart with the total costs per resolution
@@ -280,7 +241,7 @@ def render_cost_comparison_tab(df: pd.DataFrame):
         if resolution != "Daily":
             df_summary["Avg. Flexible Price (€/kWh)"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
             df_summary["Avg. Static Price (€/kWh)"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
-            st.subheader("Average Price Comparison")
+            st.subheader("Average Price per kWh")
             st.text("The monthly fee is proportionally added based on the average kWh consumption.")
             st.line_chart(df_summary.set_index("Period"), y=["Avg. Flexible Price (€/kWh)", "Avg. Static Price (€/kWh)"], y_label="Average Price (€/kWh)", color=[FLEX_COLOR, STATIC_COLOR])
         
@@ -309,9 +270,6 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         st.warning(f"No data available for {day_filter.lower()}.")
         return
     
-    # Get number of rows per day
-    intervals_per_day = df_pattern.groupby(df_pattern["timestamp"].dt.date).size().mode().iloc[0]
-
     st.subheader("Consumption & Cost Profile")
     st.text("If peak usage costs align with regular usage, significant cost-saving potential is possible.")
     load_types = ["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]
@@ -321,7 +279,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
     # Calculate the average price and proportion of each load type.
     for load in load_types:
         kwh = df_pattern[load].sum()
-        kwh_mean = df_pattern[load].mean() * intervals_per_day
+        kwh_mean = df_pattern[load].mean() * get_intervals_per_day(df)
         if kwh > 0:
             avg_price = (df_pattern[load] * df_pattern["spot_price_eur_kwh"]).sum() / kwh
             proportion = kwh / total_kwh if total_kwh > 0 else 0
@@ -421,14 +379,13 @@ def render_download_tab(df: pd.DataFrame, start_date: date, end_date: date):
         file_name=f"electricity_analysis_{start_date}_to_{end_date}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-       
 
 def compute_absence_days(df_classified: pd.DataFrame, base_threshold: float, absence_threshold: float) -> pd.DataFrame:
     """Add option to remove days with absence, that is when the daily consumption is lower than 80% of usual base threshold."""
     with st.sidebar:
 
         daily_consumption = df_classified.groupby("date")["consumption_kwh"].sum()
-        absence_days = daily_consumption[daily_consumption < (base_threshold * intervals_per_day * absence_threshold)].index.tolist()
+        absence_days = daily_consumption[daily_consumption < (base_threshold * get_intervals_per_day(df_classified) * absence_threshold)].index.tolist()
         excluded_days = []
         if absence_days:
             st.subheader("4. Absence Handling", help=f"Remove days with extremely low consumption (below {absence_threshold}%). Yields more robust data for analyses.")
@@ -437,10 +394,11 @@ def compute_absence_days(df_classified: pd.DataFrame, base_threshold: float, abs
             excluded_days = st.multiselect("Exclude days?", options=absence_days, default=default_selection)
             
     return df_classified[~df_classified["date"].isin(excluded_days)].copy()        
-        
 
 def merge_consumption_with_prices(df_consumption: pd.DataFrame, df_spot_prices: pd.DataFrame) -> pd.DataFrame:
     """Merges the spot prices with the consumption data on the timestamp column."""
+    print(f"{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}: Merging Consumption with Prices")
+
     start_date, end_date = _get_min_max_date(df_consumption)
     
     # Merge on timestamp with a tolerance of 59 minutes such that df_consumption can have 15 minutes timespans and df_spot_prices hourly prices.
@@ -455,6 +413,21 @@ def merge_consumption_with_prices(df_consumption: pd.DataFrame, df_spot_prices: 
     df_merged["date"] = df_merged["timestamp"].dt.date
     
     return df_merged
+
+@st.cache_data(ttl=3600)
+def perform_full_analysis(_df_merged, _local_timezone, _flex_tariff, _static_tariff, _shift_percentage):
+    """
+    A cached function to run all heavy computations.
+    It only re-runs if the underlying data or a key parameter changes.
+    """
+    print(f"{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}: Performing Full Analysis")
+
+    df_classified, base_threshold, peak_threshold = classify_usage(_df_merged, _local_timezone)
+        
+    df_with_shifting = simulate_peak_shifting(df_classified, _shift_percentage)
+    df_final_analysis = tariff_manager.run_cost_analysis(df_with_shifting, _flex_tariff, _static_tariff)
+    
+    return df_final_analysis, base_threshold, peak_threshold
          
 # --- Main Application ---
 uploaded_file = st.sidebar.file_uploader("Upload Your Consumption CSV", type=["csv"])
@@ -477,16 +450,11 @@ else:
         start_date, end_date, flex_tariff, static_tariff, shift_percentage = get_sidebar_inputs(df_merged, tariff_manager)
         
         if not df_merged.empty:
-            intervals_per_day = df_merged.groupby("date").size().mode().iloc[0]
-            df_classified, base_threshold, peak_threshold = classify_usage(df_merged, LOCAL_TIMEZONE, intervals_per_day)        
+            # Call the single cached function for all heavy analysis
+            df_analysis, base_threshold, peak_threshold = perform_full_analysis(df_merged, LOCAL_TIMEZONE, flex_tariff, static_tariff, shift_percentage)
             
-            df_analysis = compute_absence_days(df_classified, base_threshold, ABSENCE_THRESHOLD)
-            
-            # Simulate peak shifting within a +-2h timespan.
-            df_analysis = simulate_peak_shifting(df_analysis, shift_percentage)
-
-            # Run the cost analysis with the tariff manager instance.
-            df_analysis = tariff_manager.run_cost_analysis(df_analysis, flex_tariff, static_tariff)
+            # Interactive elements like absence handling must remain outside the cached function
+            df_analysis = compute_absence_days(df_analysis, base_threshold, ABSENCE_THRESHOLD)
 
             render_recommendation(df_analysis)
 

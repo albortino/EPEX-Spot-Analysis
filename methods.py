@@ -1,6 +1,10 @@
 import pandas as pd
 
-def classify_usage(df: pd.DataFrame, local_timezone: str, intervals_per_day: int) -> tuple[pd.DataFrame, float, float]:
+
+def get_intervals_per_day(df: pd.DataFrame) -> int:
+    return df.groupby("date").size().mode().iloc[0]
+
+def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame, float, float]:
     """
     Classifies hourly consumption into Base, Peak, and Regular load using a stateful approach.
     A peak event starts with a sharp increase in consumption (trigger) and continues
@@ -29,6 +33,7 @@ def classify_usage(df: pd.DataFrame, local_timezone: str, intervals_per_day: int
     indexed_consumption = df_local.set_index("timestamp_local")["consumption_kwh"]   
     
     # Define rolling window as 4h. In case data logs every 15 minutes multiply it with a factor.
+    intervals_per_day = get_intervals_per_day(df_local)
     rolling_window = 4 * intervals_per_day // 24
      
     df_local["rolling_std"] = indexed_consumption.rolling(window=rolling_window, center=True).std().values
@@ -141,6 +146,8 @@ def simulate_peak_shifting(df: pd.DataFrame, shift_percentage: float) -> pd.Data
     df_sim["consumption_kwh"] = df_sim["base_load_kwh"] + df_sim["regular_load_kwh"] + df_sim["peak_load_kwh"]
     
     return df_sim
+
+
 
 if __name__ == "__main__":
     pass
