@@ -37,7 +37,7 @@ def classify_usage(df: pd.DataFrame, local_timezone: str, intervals_per_day: int
     # For each day, find the point with the minimum rolling std dev (stability).
     # In case of a tie, choose the one with the lower rolling mean (consumption).
     stable_periods = df_local.dropna(subset=["rolling_std", "rolling_mean"]).sort_values(by=["rolling_std", "rolling_mean"])
-    daily_base_load_points = stable_periods.groupby("date_col").first()
+    daily_base_load_points = stable_periods.groupby("date").first()
     base_load_threshold = daily_base_load_points["rolling_mean"].mean() if not daily_base_load_points.empty else 0.0
 
     # --- Peak Load Calculation ---

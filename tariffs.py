@@ -10,7 +10,7 @@ class TariffType(Enum):
     FLEXIBLE = "flexible"
     STATIC = "static"
 
-# Dataclass adds the __init__ and __repr__ method.
+# Dataclass adds the __init__ and __repr__ method automatically.
 @dataclass
 class Tariff:
     """A dataclass to hold all information about a single tariff."""
@@ -67,24 +67,49 @@ class TariffManager:
         tariffs = {tariff.name: tariff for tariff in self.static_tariffs}
         tariffs["Custom"] = Tariff(name="Custom", type=TariffType.STATIC, price_kwh=0.14, monthly_fee=2.00)
         return tariffs
+    
+    def _prepare_df(self, df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+        """Prepares the dataframe for cost calculation by adding a date column and returning the intervals per day."""
+    
+        if not "consumption_kwh" in df.columns:
+            raise KeyError("Consumption data is missing.")
+        
+        if not "date" in df.columns or not "days_in_month" in df.columns:
+            df["date"] = df["timestamp"].dt.date
+            df["days_in_month"] = df["timestamp"].dt.days_in_month
+        
+        # Determine the number of entries per day (time resolution)
+        intervals_per_day = df.groupby("date").size().mode().iloc[0]
+                
+        return df, intervals_per_day
+        
+    def _calculate_static_cost(self, df: pd.DataFrame, tariff: Tariff) -> pd.Series:
+        """Calculates the static costs based on a tariff and a dataframe with consumption data."""
+        
+        df, intervals_per_day = self._prepare_df(df)
+        
+        # Calculate the proportion of the whole monthly fee for every row (=time resultion)
+        monthly_fee = (tariff.monthly_fee / df["days_in_month"]) / intervals_per_day
 
+        return df["consumption_kwh"] * tariff.price_kwh + monthly_fee
+
+    def _calculate_flexible_cost(self, df: pd.DataFrame, tariff: Tariff) -> pd.Series:
+        """Calculate the flexible costs based on a tariff and a dataframe with consumption as well as spot price data."""
+        
+        df, intervals_per_day = self._prepare_df(df)
+        
+        # Calculate total cost per time resolution (hour or 15 minutes) for both tariffs.
+        flex_spot_price_component = df["spot_price_eur_kwh"] * (1 + tariff.price_kwh_pct / 100) + tariff.price_kwh
+        
+        # Calculate the proportion of the whole monthly fee for every row (=time resultion)
+        monthly_fee = (tariff.monthly_fee / df["days_in_month"]) / intervals_per_day
+        
+        return df["consumption_kwh"] * flex_spot_price_component + monthly_fee
+        
     def run_cost_analysis(self, df: pd.DataFrame, flex_tariff: Tariff, static_tariff: Tariff) -> pd.DataFrame:
         """Calculates flexible and static costs for the given dataframe, supporting any time resolution."""
         
-        df_costs = df.copy()
+        df["total_cost_flexible"] = self._calculate_flexible_cost(df, flex_tariff)
+        df["total_cost_static"] = self._calculate_static_cost(df, static_tariff)
                 
-        # Determine the number of entries per day (time resolution)
-        df_costs["date"] = df_costs["timestamp"].dt.date
-        intervals_per_day = df_costs.groupby("date").size().mode().iloc[0]
-        
-        df_costs["days_in_month"] = df_costs["timestamp"].dt.days_in_month
-        
-        # Calculate total cost per time resolution (hour or 15 minutes) for both tariffs
-        flex_spot_price_component = df_costs["spot_price_eur_kwh"] * (1 + flex_tariff.price_kwh_pct / 100)
-        flex_total_kwh_price = flex_spot_price_component + flex_tariff.price_kwh
-        flex_fee = (flex_tariff.monthly_fee / df_costs["days_in_month"]) / intervals_per_day
-        static_fee = (static_tariff.monthly_fee / df_costs["days_in_month"]) / intervals_per_day
-
-        df_costs["total_cost_flexible"] = (df_costs["consumption_kwh"] * flex_total_kwh_price) + flex_fee
-        df_costs["total_cost_static"] = (df_costs["consumption_kwh"] * static_tariff.price_kwh) + static_fee
-        return df_costs.drop(columns="date")
+        return df
