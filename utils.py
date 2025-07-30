@@ -1,0 +1,44 @@
+import pandas as pd
+import io
+from datetime import date
+import streamlit as st
+from config import MIN_DATE
+
+@st.cache_data
+def to_excel(df: pd.DataFrame) -> bytes:
+    """Converts a DataFrame to an Excel file in-memory."""
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        # Create a copy to avoid modifying the cached dataframe in place
+        df_temp = df.copy()
+        df_temp["timestamp"] = df_temp["timestamp"].dt.tz_localize(None)
+        df_temp.to_excel(writer, index=False, sheet_name="AnalysisData")
+    processed_data = output.getvalue()
+    return processed_data
+
+@st.cache_data(ttl=3600)
+def get_min_max_date(df: pd.DataFrame) -> tuple[date, date]:
+    """Returns the minimum and maximum dates from a DataFrame with a timestamp column."""
+    min_val_date = df["timestamp"].min().date()
+    if min_val_date < MIN_DATE:
+        min_val_date = MIN_DATE
+        
+    max_val_date = df["timestamp"].max().date()
+    
+    return min_val_date, max_val_date
+
+def get_intervals_per_day(df: pd.DataFrame) -> int:
+    """Calculates the most frequent number of data intervals per day."""
+    if df.empty:
+        return 24 # Default to hourly if no data
+    
+    # Ensure a date column exists for grouping
+    if "date" not in df.columns:
+        df_temp = df.copy()
+        df_temp["date"] = df_temp["timestamp"].dt.date
+    else:
+        df_temp = df
+
+    # Calculate the mode of interval counts per day
+    intervals = df_temp.groupby("date").size().mode()
+    return intervals.iloc[0] if not intervals.empty else 24
