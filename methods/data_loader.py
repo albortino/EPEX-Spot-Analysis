@@ -1,12 +1,10 @@
-# data_loader.py
-
 import pandas as pd
 import streamlit as st
 import requests
 import os
 from datetime import datetime, date
-from config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, DATE_FORMAT
-from parser import ConsumptionDataParser
+from methods.config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, DATE_FORMAT, CACHE_FOLDER
+from methods.file_parser import ConsumptionDataParser
 
 # --- Spot Price Data Handling ---
 
@@ -54,10 +52,15 @@ def get_spot_data(country: str, start: date, end: date) -> pd.DataFrame:
     """
     Fetches spot market price data, using a local cache to avoid redundant API calls.
     """
+    if not os.path.exists(CACHE_FOLDER):
+        os.makedirs(CACHE_FOLDER)
+    
     country_cache_filename = f"{country}_{SPOT_PRICE_CACHE_FILE}"
+    cache_path = os.path.join(CACHE_FOLDER, country_cache_filename)
+    
     now = datetime.now().strftime(DATE_FORMAT)
-    if os.path.exists(country_cache_filename):
-        df_cache = _load_from_cache(country_cache_filename)
+    if os.path.exists(cache_path):
+        df_cache = _load_from_cache(cache_path)
         if not df_cache.empty:
             min_cached = df_cache["timestamp"].min().date()
             max_cached = df_cache["timestamp"].max().date()
@@ -66,7 +69,7 @@ def get_spot_data(country: str, start: date, end: date) -> pd.DataFrame:
                 return df_cache[(df_cache["timestamp"].dt.date >= start) & (df_cache["timestamp"].dt.date <= end)]
     
     print(f"{now}: Cache insufficient or missing. Will fetch data from aWATTar.")
-    return _fetch_spot_data(country, start, end, country_cache_filename)
+    return _fetch_spot_data(country, start, end, cache_path)
 
 # --- Consumption Data Handling ---
 
@@ -80,7 +83,7 @@ def process_consumption_data(uploaded_file, aggregation_level: str = "h") -> pd.
         df = parser.parse_file(uploaded_file, aggregation_level)
         if df.empty:
             st.error("Could not parse the CSV file. Please ensure it is from a supported provider or in the default format.")
-        return df
+        return df.convert_dtypes()
     except Exception as e:
         st.error(f"An unexpected error occurred while processing the file: {e}")
         return pd.DataFrame()
@@ -108,4 +111,4 @@ def merge_consumption_with_prices(df_consumption: pd.DataFrame, df_spot_prices: 
         df_merged["timestamp"] = df_merged["timestamp"].dt.tz_convert(LOCAL_TIMEZONE)
         df_merged["date"] = df_merged["timestamp"].dt.date
         
-    return df_merged
+    return df_merged.convert_dtypes()

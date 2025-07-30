@@ -1,11 +1,11 @@
 import streamlit as st
 from datetime import datetime
-import config
-import data_loader
-import analysis
-import ui_components
-from tariffs import TariffManager
-from config import AWATTAR_COUNTRY
+import methods.config as config
+import methods.data_loader as data_loader
+import methods.analysis as analysis
+import methods.ui_components as ui_components
+from methods.tariffs import TariffManager
+from methods.config import AWATTAR_COUNTRY
 
 # --- Page and App Configuration ---
 st.set_page_config(layout="wide")
@@ -16,7 +16,7 @@ st.markdown("Analyze your consumption, compare flexible vs. static tariffs, and 
 def main(country: str):
     
     # Instantiate managers once
-    tariff_manager = TariffManager("flex_tariffs.json", "static_tariffs.json")
+    tariff_manager = TariffManager("tariffs_flexible.json", "tariffs_static.json")
 
     # --- File Upload and Initial Data Processing ---
     uploaded_file = st.sidebar.file_uploader("Upload Your Consumption CSV", type=["csv"], help="Please see https://awattar-backtesting.github.io/ for more tipps and tricks how to get the consumption data from your network provider.")
@@ -62,21 +62,6 @@ def main(country: str):
         "Download Data"
     ]
     
-    # # Render the analysis tabs
-    # tab1, tab2, tab3, tab4, tab5 = st.tabs(tab_options)
-    # with tab1:
-    #     ui_components.render_price_analysis_tab(df_analysis, static_tariff)
-    # with tab2:
-    #     ui_components.render_cost_comparison_tab(df_analysis)
-    # with tab3:
-    #     ui_components.render_usage_pattern_tab(df_analysis, base_threshold, peak_threshold)
-    # with tab4:
-    #     ui_components.render_yearly_summary_tab(df_analysis)
-    # with tab5:
-    #     ui_components.render_download_tab(df_analysis, start_date, end_date)
-
-   
-
     # Create control panel instead of tabs for better control and performance gains.
     st.markdown("---")
 
@@ -85,10 +70,10 @@ def main(country: str):
         options=tab_options,
         default=tab_options[0],
         selection_mode="single",
-        format_func=lambda x: f"**{x}**",
+        format_func=lambda x: f"**{x}**", # Makes it bold
         key="active_tab",  # This key is crucial for statefulness
         width="stretch",
-        label_visibility="collapsed"
+        label_visibility="collapsed" # Completely hides the label as it's not necessary
     )
         
     # If/elif blocks render only the selected view's content and keep the user on the same "tab" after an interaction.

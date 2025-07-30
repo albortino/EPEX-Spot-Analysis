@@ -6,6 +6,7 @@ MIN_DATE = date(2024, 1, 1)
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # --- API and Caching Configuration ---
+CACHE_FOLDER = "cache"
 SPOT_PRICE_CACHE_FILE = "spot_prices.csv"
 AWATTAR_COUNTRY = "at"  # or "de"
 

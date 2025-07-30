@@ -2,7 +2,7 @@ import pandas as pd
 import io
 from datetime import date
 import streamlit as st
-from config import MIN_DATE
+from methods.config import MIN_DATE
 
 @st.cache_data
 def to_excel(df: pd.DataFrame) -> bytes:
@@ -42,3 +42,14 @@ def get_intervals_per_day(df: pd.DataFrame) -> int:
     # Calculate the mode of interval counts per day
     intervals = df_temp.groupby("date").size().mode()
     return intervals.iloc[0] if not intervals.empty else 24
+
+def get_aggregation_config(df: pd.DataFrame, resolution: str) -> dict:
+    """Returns the aggregation configuration based on the selected resolution."""
+    resolution_config = {
+        "Hourly": {"grouper": df["timestamp"].dt.hour, "x_axis_map": {i: str(i) for i in range(24)}, "name": "Hour of Day"},
+        "Weekly": {"grouper": df["timestamp"].dt.dayofweek, "x_axis_map": {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}, "name": "Day of Week"},
+        "Monthly": {"grouper": df["timestamp"].dt.month, "x_axis_map": {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun", 7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}, "name": "Month"},
+    }
+
+    config = resolution_config[resolution]
+    return config

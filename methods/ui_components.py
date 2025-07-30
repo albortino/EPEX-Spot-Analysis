@@ -6,11 +6,11 @@ import matplotlib.pyplot as plt
 import random
 from datetime import datetime, date
 
-from config import *
-from tariffs import Tariff, TariffManager
-from utils import get_min_max_date, to_excel, get_intervals_per_day
-import data_loader
-import ui_components
+from methods.config import *
+from methods.tariffs import Tariff, TariffManager
+from methods.utils import get_min_max_date, to_excel, get_intervals_per_day, get_aggregation_config
+import methods.data_loader as data_loader
+import methods.ui_components as ui_components
 
 # --- Sidebar and Input Controls ---
 
@@ -40,8 +40,8 @@ def _compare_all_tariffs(df: pd.DataFrame, _tariff_manager: TariffManager, count
         total_costs[("static", name)] = _tariff_manager._calculate_static_cost(df, tariff).sum()
     
     # Identify the cheapest tariffs based on the calculated costs
-    cheapest_flex_key = min((k for k in total_costs if k[0] == "flex"), key=total_costs.get)
-    cheapest_static_key = min((k for k in total_costs if k[0] == "static"), key=total_costs.get)
+    cheapest_flex_key = min((k for k in total_costs if k[0] == "flex"), key=total_costs.get) # type: ignore
+    cheapest_static_key = min((k for k in total_costs if k[0] == "static"), key=total_costs.get) # type: ignore
     
     final_flex_tariff = flex_options[cheapest_flex_key[1]]
     final_static_tariff = static_options[cheapest_static_key[1]]
@@ -178,13 +178,7 @@ def _compute_price_distribution_data(df: pd.DataFrame, resolution: str) -> pd.Da
     print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Price Distribution Data")
     price_agg_dict = {"spot_price_eur_kwh": [("q1", lambda x: x.quantile(0.25)), ("median", "median"), ("q3", lambda x: x.quantile(0.75))]}
     
-    resolution_config = {
-        "Hourly": {"grouper": df["timestamp"].dt.hour, "x_axis_map": {i: str(i) for i in range(24)}, "name": "Hour of Day"},
-        "Weekly": {"grouper": df["timestamp"].dt.dayofweek, "x_axis_map": {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}, "name": "Day of Week"},
-        "Monthly": {"grouper": df["timestamp"].dt.month, "x_axis_map": {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun", 7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}, "name": "Month"},
-    }
-
-    config = resolution_config[resolution]
+    config = get_aggregation_config(df, resolution)
     df_price = df.groupby(config["grouper"]).agg(price_agg_dict).dropna()
     df_price.columns = ["Spot Price Q1", "Spot Price Median", "Spot Price Q3"]
     df_price.index = df_price.index.map(config["x_axis_map"])
@@ -200,6 +194,8 @@ def _compute_heatmap_data(df: pd.DataFrame) -> pd.DataFrame:
 
 def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     """Renders the interactive analysis of electricity spot prices."""
+    print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Price Analysis Tab")
+    
     resolution = st.radio("Select Time Resolution", ("Hourly", "Weekly", "Monthly"), horizontal=True, key="price_res")
     
     # Quartile Distribution Chart
@@ -232,7 +228,7 @@ def _compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataF
     freq_map = {"Daily": "D", "Weekly": "W-MON", "Monthly": "ME"}
     grouper = pd.Grouper(key="timestamp", freq=freq_map[resolution])
 
-    summary_agg_dict = {
+    summary_agg_dict: dict = {
         "Total Consumption": ("consumption_kwh", "sum"),
         "Total Flexible Cost": ("total_cost_flexible", "sum"),
         "Total Static Cost": ("total_cost_static", "sum")
@@ -246,6 +242,9 @@ def _compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataF
 
 def render_cost_comparison_tab(df: pd.DataFrame):
     """Renders the content for the 'Cost Comparison' tab."""
+
+    print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Cost Comparison Tab")
+    
     resolution = st.radio("Select Time Resolution", ("Daily", "Weekly", "Monthly"), horizontal=True, key="summary_res")
     
     df_summary = _compute_cost_comparison_data(df, resolution)
@@ -270,8 +269,8 @@ def render_cost_comparison_tab(df: pd.DataFrame):
     st.subheader("Detailed Comparison Table")
     st.text("Review the costs and savings for each period.")
     styler = df_summary[["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]].style
+    styler = styler.map(lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}", subset=["Difference (€)"]) #type: ignore
     styler = styler.format({"Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"})
-    styler = styler.map(lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}", subset=["Difference (€)"])
     st.dataframe(styler, hide_index=True, use_container_width=True)
 
 # --- Tab: Usage Pattern Analysis ---
@@ -316,33 +315,17 @@ def _compute_consumption_quartiles(df: pd.DataFrame, intervals_per_day: int) -> 
         ]
     }
     
-    # A dictionary to map the resolution to the correct pandas Series for grouping.
-    resolution_config = {
-        "Hourly": {"grouper": df["timestamp"].dt.hour, "x_axis_title": "Hour of Day"},
-        "Weekly": {"grouper": df["timestamp"].dt.dayofweek, "x_axis_title": "Day of Week"},
-        "Monthly": {"grouper": df["timestamp"].dt.month, "x_axis_title": "Month"}
-    }
-    
     if intervals_per_day == 24:
         resolution = "Monthly"
     else:
         resolution = "Hourly"
     
-    config = resolution_config[resolution]
+    config = get_aggregation_config(df, resolution)
     df_consumption_quartiles = df.groupby(config["grouper"]).agg(consumption_agg_dict)
     df_consumption_quartiles.columns = ["Consumption Q1", "Consumption Median", "Consumption Q3"]
-    df_consumption_quartiles.index.name = config["x_axis_title"]
-    
-    # Special handling for weekly resolution to show weekday names.
-    if resolution == "Weekly":
-        x_axis_map = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}
-    elif resolution == "Monthly":
-        x_axis_map = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun", 7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}
-    else:
-        x_axis_map = {i: str(i) for i in range(24)}
-        
-    df_consumption_quartiles.index = df_consumption_quartiles.index.map(x_axis_map)
-    df_consumption_quartiles = df_consumption_quartiles.reindex(x_axis_map.values())
+    df_consumption_quartiles.index.name = config["x_axis_title"]        
+    df_consumption_quartiles.index = df_consumption_quartiles.index.map(config["x_axis_map"])
+    df_consumption_quartiles = df_consumption_quartiles.reindex(config["x_axis_map"].values())
 
     return df_consumption_quartiles
 
@@ -477,7 +460,7 @@ def _compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
         "Total Flexible Cost": ("total_cost_flexible", "sum"),
         "Total Static Cost": ("total_cost_static", "sum")
     }
-    yearly_agg = df.groupby("Year").agg(**yearly_summary_agg_dict).reset_index()
+    yearly_agg = df.groupby("Year").agg(**yearly_summary_agg_dict).reset_index() # type: ignore
     
     if not yearly_agg.empty and yearly_agg["Total Consumption"].sum() > 0:
         yearly_agg["Avg. Flex Price (€/kWh)"] = yearly_agg["Total Flexible Cost"] / yearly_agg["Total Consumption"]
@@ -492,7 +475,7 @@ def render_yearly_summary_tab(df: pd.DataFrame):
         st.warning("No data available to generate a yearly summary.")
         return
         
-    style_format = {
+    style_format: dict = {
         "Total Consumption": "{:,.2f} kWh",
         "Total Flexible Cost": "€{:,.2f}",
         "Total Static Cost": "€{:,.2f}",
