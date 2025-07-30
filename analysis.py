@@ -2,6 +2,7 @@
 
 import pandas as pd
 from utils import get_intervals_per_day
+from config import NEGLIGABLE_KWH, BASE_QUANTILE_THRESHOLD, PEAK_QUANTILE_THRESHOLD, STD_MULTIPLE
 
 def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame, float, float]:
     """
@@ -10,10 +11,6 @@ def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame,
     as long as consumption remains above a high-usage sustain threshold.
     Prefers data in 15-minute intervals but returns clusters for every hour.
     """
-    NEGLIGABLE_KWH = 0.05
-    BASE_QUANTILE_THRESHOLD = 0.9
-    PEAK_QUANTILE_THRESHOLD = 0.75
-    STD_MULTIPLE = 1.25
 
     if df.empty:
         return df, 0.0, 0.0
@@ -21,32 +18,43 @@ def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame,
     df_c = df.copy()
 
     # --- Base Load Calculation ---
+    # Find the most stable, lowest consumption period for each day to define the base load.
+    # This is more robust than assuming base load occurs at fixed night hours.
     df_local = df.copy()
     df_local["timestamp_local"] = df_local["timestamp"].dt.tz_convert(local_timezone)
     indexed_consumption = df_local.set_index("timestamp_local")["consumption_kwh"]
     
+    # Calculate rolling metrics over a 4-hour window to find stable periods.
+    # Define rolling window as 4h. In case data logs every 15 minutes multiply it with a factor.
     intervals_per_day = get_intervals_per_day(df_local)
     rolling_window = 4 * intervals_per_day // 24
      
     df_local["rolling_std"] = indexed_consumption.rolling(window=rolling_window, center=True).std().values
     df_local["rolling_mean"] = indexed_consumption.rolling(window=rolling_window, center=True).quantile(BASE_QUANTILE_THRESHOLD).values
     
+    # For each day, find the point with the minimum rolling std dev (stability).
+    # In case of a tie, choose the one with the lower rolling mean (consumption).
     stable_periods = df_local.dropna(subset=["rolling_std", "rolling_mean"]).sort_values(by=["rolling_std", "rolling_mean"])
     daily_base_load_points = stable_periods.groupby(df_local['timestamp_local'].dt.date).first()
     base_load_threshold = daily_base_load_points["rolling_mean"].mean() if not daily_base_load_points.empty else 0.0
 
     # --- Peak Load Calculation ---
+    # Influencable load is everything above the base load.
     influenceable_load = (df_c["consumption_kwh"] - base_load_threshold).clip(lower=0)
     consumption_diff = df_c["consumption_kwh"].diff().fillna(0)
     
+    # Sustain Threshold: A high level of consumption. We use a quantile on the *influenceable* load.
+    # This represents consumption significantly above the base.
     peak_sustain_threshold_influenceable = influenceable_load[influenceable_load > NEGLIGABLE_KWH].quantile(PEAK_QUANTILE_THRESHOLD)
     peak_sustain_threshold_influenceable = 0.0 if pd.isna(peak_sustain_threshold_influenceable) else peak_sustain_threshold_influenceable
     peak_sustain_threshold_absolute = base_load_threshold + peak_sustain_threshold_influenceable
 
+    # Trigger Threshold: A sharp increase from the previous hour (based on std dev of positive changes).
     positive_diffs = consumption_diff[consumption_diff > NEGLIGABLE_KWH]
     peak_trigger_threshold = positive_diffs.std() * STD_MULTIPLE if not positive_diffs.empty else 0.0
     peak_trigger_threshold = 0.0 if pd.isna(peak_trigger_threshold) else peak_trigger_threshold
 
+    # If sustain threshold is negligible, classify all influenceable load as "regular".
     if peak_sustain_threshold_influenceable < NEGLIGABLE_KWH:
         df_c["base_load_kwh"] = df_c["consumption_kwh"].clip(upper=base_load_threshold)
         df_c["peak_load_kwh"] = 0.0
@@ -59,17 +67,21 @@ def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame,
     for i in range(len(df_c)):
         is_trigger = consumption_diff.iloc[i] > peak_trigger_threshold
         is_sustained = df_c["consumption_kwh"].iloc[i] > peak_sustain_threshold_absolute
+        
+        # Start a new peak if a sharp increase pushes consumption above the sustain level
         if not in_peak_state and is_trigger and is_sustained:
             in_peak_state = True
+        # Already in a peak. End the peak if consumption falls below the sustain level
         elif in_peak_state and not is_sustained:
             in_peak_state = False
         is_peak_list.append(in_peak_state)
     
     is_peak = pd.Series(is_peak_list, index=df_c.index)
 
+    #  Assign load types based on classification
     df_c["base_load_kwh"] = df_c["consumption_kwh"].clip(upper=base_load_threshold)
-    df_c["peak_load_kwh"] = influenceable_load.where(is_peak, 0)
     df_c["regular_load_kwh"] = influenceable_load.where(~is_peak, 0)
+    df_c["peak_load_kwh"] = influenceable_load.where(is_peak, 0)
         
     return df_c, base_load_threshold, peak_sustain_threshold_influenceable
 

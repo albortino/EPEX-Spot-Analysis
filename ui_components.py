@@ -1,5 +1,3 @@
-# ui_components.py
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -11,26 +9,35 @@ from datetime import datetime, date
 from config import *
 from tariffs import Tariff, TariffManager
 from utils import get_min_max_date, to_excel, get_intervals_per_day
+import data_loader
+import ui_components
 
 # --- Sidebar and Input Controls ---
 
 @st.cache_data(ttl=60*10)
-def _compare_all_tariffs(df: pd.DataFrame, tariff_manager: TariffManager) -> tuple[Tariff, Tariff]:
+def _compare_all_tariffs(df: pd.DataFrame, _tariff_manager: TariffManager, country: str) -> tuple[Tariff, Tariff]:
     """Finds the cheapest flex and static tariffs from the predefined lists."""
     print(f"{datetime.now().strftime(DATE_FORMAT)}: Calculating cheapest tariff comparison")
     
-    flex_options = tariff_manager.get_flex_tariffs_with_custom()
-    static_options = tariff_manager.get_static_tariffs_with_custom()
+    flex_options = _tariff_manager.get_flex_tariffs_with_custom()
+    static_options = _tariff_manager.get_static_tariffs_with_custom()
     total_costs = {}
-
+    
     # Calculate total costs for all non-custom tariffs
     for name, tariff in flex_options.items():
         if name == "Custom": continue
-        total_costs[("flex", name)] = tariff_manager._calculate_flexible_cost(df.copy(), tariff).sum()
+        
+        # Load spot_price data if necessary
+        if not "spot_price_eur_kwh" in df.columns:
+            min_date, max_date = ui_components.get_min_max_date(df)
+            df_spot_prices = data_loader.get_spot_data(country, min_date, max_date)
+            df = data_loader.merge_consumption_with_prices(df, df_spot_prices)
     
-    for name, tariff in static_options.items():
+        total_costs[("flex", name)] = _tariff_manager._calculate_flexible_cost(df, tariff).sum()
+    
+    for name, tariff  in static_options.items():
         if name == "Custom": continue
-        total_costs[("static", name)] = tariff_manager._calculate_static_cost(df.copy(), tariff).sum()
+        total_costs[("static", name)] = _tariff_manager._calculate_static_cost(df, tariff).sum()
     
     # Identify the cheapest tariffs based on the calculated costs
     cheapest_flex_key = min((k for k in total_costs if k[0] == "flex"), key=total_costs.get)
@@ -41,12 +48,14 @@ def _compare_all_tariffs(df: pd.DataFrame, tariff_manager: TariffManager) -> tup
     
     return final_flex_tariff, final_static_tariff
 
-def _return_tariff_selection(tariff_manager: TariffManager) -> tuple[Tariff, Tariff]:
+def _return_tariff_selection(_tariff_manager: TariffManager) -> tuple[Tariff, Tariff]:
     """Renders tariff selection expanders in the UI for user customization."""
+    print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Tariff Selection")
+    
     final_tariffs = []
     options = [
-        ("Flexible (Spot Price) Plan", tariff_manager.get_flex_tariffs_with_custom()),
-        ("Static (Fixed Price) Plan", tariff_manager.get_static_tariffs_with_custom())
+        ("Flexible (Spot Price) Plan", _tariff_manager.get_flex_tariffs_with_custom()),
+        ("Static (Fixed Price) Plan", _tariff_manager.get_static_tariffs_with_custom())
     ]
 
     for title, tariff_options in options:
@@ -70,36 +79,43 @@ def _return_tariff_selection(tariff_manager: TariffManager) -> tuple[Tariff, Tar
             )
     return tuple(final_tariffs)
 
-def get_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager):
+def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager, country: str = AWATTAR_COUNTRY) -> tuple[str, date, date, Tariff, Tariff, float]:
     """Renders all sidebar inputs and returns the configuration values."""
     print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Sidebar")
     with st.sidebar:
         st.header("Configuration")
         
-        # 1. Analysis Period Selection
-        st.subheader("1. Analysis Period")
+        # 1. Country Selection for EPEX
+        country_select = {"Austria": "at", "Germany": "de"}
+        
+        st.subheader("1. Country")
+        selected_country = st.selectbox(label="Select country for EPEX spot prices", options=country_select.keys(), index=0)
+        awattar_country = country_select[selected_country]
+        
+        # 2. Analysis Period Selection
+        st.subheader("2. Analysis Period")
         min_date, max_date = get_min_max_date(df)
         col1, col2 = st.columns(2)
         start_date = col1.date_input("Start Date", min_date, min_value=min_date, max_value=max_date, format="DD.MM.YYYY")
         end_date = col2.date_input("End Date", max_date, min_value=min_date, max_value=max_date, format="DD.MM.YYYY")
         
-        # 2. Tariff Plan Selection
-        st.subheader("2. Tariff Plans")
+        # 3. Tariff Plan Selection
+        st.subheader("3. Tariff Plans")
         st.text("Choose a tariff or adjust parameters for a custom comparison.")
         
         compare_cheapest = st.checkbox("Compare cheapest tariffs", value=False, help="Automatically selects the most economical predefined tariffs based on your data.")
         if compare_cheapest:
-            final_flex_tariff, final_static_tariff = _compare_all_tariffs(df, tariff_manager)
+            final_flex_tariff, final_static_tariff = _compare_all_tariffs(df, tariff_manager, country)
             st.info(f"Cheapest Flex Tariff:\n\n**{final_flex_tariff.name}**\n\nCheapest Static Tariff:\n\n**{final_static_tariff.name}**")
         else:
             final_flex_tariff, final_static_tariff = _return_tariff_selection(tariff_manager)
             
-        # 3. Load Shifting Simulation
-        st.subheader("3. Cost Simulation")
+        # 4. Load Shifting Simulation
+        st.subheader("4. Cost Simulation")
         st.markdown("Simulate shifting a percentage of your peak consumption to a cheaper hour within a +/- 2-hour window.", help="This shows the potential savings if you can be flexible with high-power activities like EV charging or running a heat pump.")
         shift_percentage = st.slider("Shift Peak Load (%)", min_value=0, max_value=100, value=0, step=5)
 
-        return start_date, end_date, final_flex_tariff, final_static_tariff, shift_percentage
+        return awattar_country, start_date, end_date, final_flex_tariff, final_static_tariff, shift_percentage
 
 # --- Main Page Components ---
 
@@ -115,12 +131,12 @@ def _compute_absence_data(df: pd.DataFrame, base_threshold: float, absence_thres
     absence_days = daily_consumption[daily_consumption < (base_threshold * intervals_per_day * absence_threshold)].index.tolist()
     return absence_days
 
-def get_absence_days(df: pd.DataFrame, base_threshold: float) -> pd.DataFrame:
+def render_absence_days(df: pd.DataFrame, base_threshold: float) -> pd.DataFrame:
     """Adds a sidebar option to remove days with very low consumption."""
     with st.sidebar:
         absence_days = _compute_absence_data(df, base_threshold, ABSENCE_THRESHOLD)
         if absence_days:
-            st.subheader("4. Absence Handling", help=f"Remove days with consumption below {ABSENCE_THRESHOLD:.0%} of the typical base load. This can provide a more accurate analysis of your normal usage.")
+            st.subheader("5. Absence Handling", help=f"Remove days with consumption below {ABSENCE_THRESHOLD:.0%} of the typical base load. This can provide a more accurate analysis of your normal usage.")
             select_all = st.checkbox(f"Exclude all {len(absence_days)} detected absence days", value=False)
             default_selection = absence_days if select_all else []
             excluded_days = st.multiselect("Select specific days to exclude:", options=absence_days, default=default_selection)
@@ -133,7 +149,6 @@ def get_absence_days(df: pd.DataFrame, base_threshold: float) -> pd.DataFrame:
 def render_recommendation(df: pd.DataFrame):
     """Displays the final tariff recommendation based on calculated savings."""
     print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Recommendation")
-    st.subheader("Tariff Recommendation")
     savings = df["total_cost_static"].sum() - df["total_cost_flexible"].sum()
 
     # Calculate the proportion of peak consumption that occurs during the cheapest 25% of hours
@@ -146,7 +161,11 @@ def render_recommendation(df: pd.DataFrame):
 
     # Display the appropriate recommendation message
     if savings > 0:
-        additional_text = f"This is a great fit. You align **{peak_ratio:.0%}** of your peak usage with the cheapest market prices." if peak_ratio > 0.3 else "You could save even more by shifting high-consumption activities to times with lower spot prices."
+        if peak_ratio > 0.4:
+            additional_text = f"This is a great fit. You align **{peak_ratio:.0%}** of your peak usage with the cheapest market prices."
+        else:
+            additional_text = "You could save even more by shifting high-consumption activities to times with lower spot prices."
+            
         st.success(f"✅ Flexible Plan Recommended: You could have saved €{savings:.2f}\n\n{additional_text}")
     else:
         st.warning(f"⚠️ Static Plan Recommended: The flexible plan would have cost €{-savings:.2f} more.\n\nA fixed price offers better cost stability for your current usage pattern.")
@@ -160,15 +179,16 @@ def _compute_price_distribution_data(df: pd.DataFrame, resolution: str) -> pd.Da
     price_agg_dict = {"spot_price_eur_kwh": [("q1", lambda x: x.quantile(0.25)), ("median", "median"), ("q3", lambda x: x.quantile(0.75))]}
     
     resolution_config = {
-        "Hourly": {"grouper": df["timestamp"].dt.hour, "x_axis_map": {i: str(i) for i in range(24)}},
-        "Weekly": {"grouper": df["timestamp"].dt.dayofweek, "x_axis_map": {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}},
-        "Monthly": {"grouper": df["timestamp"].dt.month, "x_axis_map": {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun", 7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}},
+        "Hourly": {"grouper": df["timestamp"].dt.hour, "x_axis_map": {i: str(i) for i in range(24)}, "name": "Hour of Day"},
+        "Weekly": {"grouper": df["timestamp"].dt.dayofweek, "x_axis_map": {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}, "name": "Day of Week"},
+        "Monthly": {"grouper": df["timestamp"].dt.month, "x_axis_map": {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun", 7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}, "name": "Month"},
     }
-    
+
     config = resolution_config[resolution]
-    df_price = df.groupby(config["grouper"]).agg(price_agg_dict)
+    df_price = df.groupby(config["grouper"]).agg(price_agg_dict).dropna()
     df_price.columns = ["Spot Price Q1", "Spot Price Median", "Spot Price Q3"]
     df_price.index = df_price.index.map(config["x_axis_map"])
+    df_price.index.name = config["name"]
     df_price = df_price.reindex(config["x_axis_map"].values())
     return df_price
 
@@ -178,9 +198,8 @@ def _compute_heatmap_data(df: pd.DataFrame) -> pd.DataFrame:
     print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Heatmap Data")
     return df.pivot_table(values="spot_price_eur_kwh", index=df["timestamp"].dt.month, columns=df["timestamp"].dt.hour, aggfunc="mean")
 
-def render_price_analysis_tab(df: pd.DataFrame):
+def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     """Renders the interactive analysis of electricity spot prices."""
-    st.subheader("Spot Price Analysis")
     resolution = st.radio("Select Time Resolution", ("Hourly", "Weekly", "Monthly"), horizontal=True, key="price_res")
     
     # Quartile Distribution Chart
@@ -192,7 +211,9 @@ def render_price_analysis_tab(df: pd.DataFrame):
     fig.add_trace(go.Scatter(x=df_price.index, y=df_price["Spot Price Q3"], mode='lines', line=dict(dash='dot', color=FLEX_COLOR_LIGHT), name='3rd Quartile (Q3)'))
     fig.add_trace(go.Scatter(x=df_price.index, y=df_price["Spot Price Median"], mode='lines', line=dict(color=FLEX_COLOR, width=3), name='Median Price'))
     fig.add_trace(go.Scatter(x=df_price.index, y=df_price["Spot Price Q1"], mode='lines', line=dict(dash='dot', color=FLEX_COLOR_LIGHT), name='1st Quartile (Q1)'))
-    fig.update_layout(yaxis_title="Spot Price (€/kWh)", legend_title_text="Metrics", hovermode="x unified")
+    fig.add_trace(go.Scatter(x=df_price.index, y=[static_tariff.price_kwh]*len(df_price.index), mode='lines', line=dict(color=STATIC_COLOR, width=2), name='Static Tariff'))
+    
+    fig.update_layout(xaxis_title=df_price.index.name, yaxis_title="Spot Price (€/kWh)", legend_title_text="Metrics", hovermode="x unified")
     st.plotly_chart(fig, use_container_width=True)
 
     # Heatmap Analysis
@@ -225,7 +246,6 @@ def _compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataF
 
 def render_cost_comparison_tab(df: pd.DataFrame):
     """Renders the content for the 'Cost Comparison' tab."""
-    st.subheader("Cost Breakdown by Period")
     resolution = st.radio("Select Time Resolution", ("Daily", "Weekly", "Monthly"), horizontal=True, key="summary_res")
     
     df_summary = _compute_cost_comparison_data(df, resolution)
@@ -233,16 +253,20 @@ def render_cost_comparison_tab(df: pd.DataFrame):
         st.warning("No data to display for the selected period and resolution.")
         return
 
-    st.subheader("Total Costs per Period")
-    st.markdown("Compare the total energy bill for both tariff types over time, including energy usage costs and monthly fees.")
-    st.line_chart(df_summary.set_index("Period"), y=["Total Flexible Cost", "Total Static Cost"], y_label="Total Cost (€)", color=[FLEX_COLOR, STATIC_COLOR])
+    col1, col2 = st.columns(2)
 
-    st.subheader("Average Price per kWh")
-    st.markdown("See the effective price per kWh after accounting for both variable costs and fixed fees.")
-    df_summary["Avg. Flexible Price (€/kWh)"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
-    df_summary["Avg. Static Price (€/kWh)"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
-    st.line_chart(df_summary.set_index("Period"), y=["Avg. Flexible Price (€/kWh)", "Avg. Static Price (€/kWh)"], y_label="Average Price (€/kWh)", color=[FLEX_COLOR, STATIC_COLOR])
-    
+    with col1:
+        st.subheader("Total Costs per Period")
+        st.markdown("Compare the total energy bill for both tariff types over time, including energy usage costs and monthly fees.")
+        st.line_chart(df_summary.set_index("Period"), y=["Total Flexible Cost", "Total Static Cost"], y_label="Total Cost (€)", color=[FLEX_COLOR, STATIC_COLOR])
+
+    with col2:
+        st.subheader("Average Price per kWh")
+        st.markdown("See the effective price per kWh after accounting for both variable costs and fixed fees.")
+        df_summary["Avg. Flexible Price (€/kWh)"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
+        df_summary["Avg. Static Price (€/kWh)"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
+        st.line_chart(df_summary.set_index("Period"), y=["Avg. Flexible Price (€/kWh)", "Avg. Static Price (€/kWh)"], y_label="Average Price (€/kWh)", color=[FLEX_COLOR, STATIC_COLOR])
+            
     st.subheader("Detailed Comparison Table")
     st.text("Review the costs and savings for each period.")
     styler = df_summary[["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]].style
@@ -276,12 +300,88 @@ def _compute_usage_profile_data(df: pd.DataFrame) -> pd.DataFrame:
             })
     return pd.DataFrame(profile_data)
 
+
+@st.cache_data(ttl=3600)
+def _compute_consumption_quartiles(df: pd.DataFrame, intervals_per_day: int) -> pd.DataFrame:
+    """Computes and caches the usage data for the selected resolution."""
+    
+    print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Consumption Data")
+    
+    # Define the aggregation logic once to be reused.
+    consumption_agg_dict = {
+        "consumption_kwh": [
+            ("q1", lambda x: x.quantile(0.25)),
+            ("median", lambda x: x.quantile(0.50)),
+            ("q3", lambda x: x.quantile(0.75))
+        ]
+    }
+    
+    # A dictionary to map the resolution to the correct pandas Series for grouping.
+    resolution_config = {
+        "Hourly": {"grouper": df["timestamp"].dt.hour, "x_axis_title": "Hour of Day"},
+        "Weekly": {"grouper": df["timestamp"].dt.dayofweek, "x_axis_title": "Day of Week"},
+        "Monthly": {"grouper": df["timestamp"].dt.month, "x_axis_title": "Month"}
+    }
+    
+    if intervals_per_day == 24:
+        resolution = "Monthly"
+    else:
+        resolution = "Hourly"
+    
+    config = resolution_config[resolution]
+    df_consumption_quartiles = df.groupby(config["grouper"]).agg(consumption_agg_dict)
+    df_consumption_quartiles.columns = ["Consumption Q1", "Consumption Median", "Consumption Q3"]
+    df_consumption_quartiles.index.name = config["x_axis_title"]
+    
+    # Special handling for weekly resolution to show weekday names.
+    if resolution == "Weekly":
+        x_axis_map = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}
+    elif resolution == "Monthly":
+        x_axis_map = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun", 7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}
+    else:
+        x_axis_map = {i: str(i) for i in range(24)}
+        
+    df_consumption_quartiles.index = df_consumption_quartiles.index.map(x_axis_map)
+    df_consumption_quartiles = df_consumption_quartiles.reindex(x_axis_map.values())
+
+    return df_consumption_quartiles
+
+@st.cache_data(ttl=3600)
+def _compute_example_day(df: pd.DataFrame, random_day, group: bool = False) -> pd.DataFrame:
+    """Selects a random day and return the data for plotting as well as the DataFrame itself."""
+    print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Example Day")
+
+    df_hour = df[df["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.date == random_day].copy()
+    
+    if not df_hour.empty:
+        df_hour["hour"] = df_hour["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.hour
+
+        # Group by hour and sum the kWh columns
+        if group:
+            df_hour = (
+                df_hour.groupby("hour")[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
+                .sum())
+        else:
+            df_hour = df_hour.set_index("timestamp")
+        
+        df_hour = df_hour[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
+        
+        df_hour = df_hour.rename(columns={
+                "base_load_kwh": "Base Load",
+                "regular_load_kwh": "Regular Load",
+                "peak_load_kwh": "Peak Load"
+            })
+    
+        return df_hour
+    else:
+        return pd.DataFrame()
+
+
 def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_threshold: float):
     """Renders the content for the 'Usage Pattern Analysis' tab."""
-    st.subheader("Analyze Your Consumption Profile")
     
     # Allow filtering by day type
-    df_filtered = df.copy()
+    df_filtered = df[df["consumption_kwh"] > 0].copy()
     day_filter = st.radio("Filter data by:", ("All Days", "Weekdays", "Weekends"), horizontal=True)
     if day_filter != "All Days":
         is_weekend = df_filtered["timestamp"].dt.dayofweek >= 5
@@ -292,6 +392,25 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         return
         
     intervals = get_intervals_per_day(df)
+    
+    # Consumption Over Time
+    df_consumption_day = _compute_consumption_quartiles(df_filtered, intervals)
+    
+    st.subheader("Consumption Over Time")
+    st.markdown(
+        "This chart illustrates the statistical distribution of your consumption for the selected time resolution. "
+        "The solid line represents the **median (50th percentile)** consumption, while the dotted lines show the first and third Quartile."
+    )
+
+    fig = go.Figure()
+    idx = df_consumption_day.index
+    fig.add_trace(go.Scatter(x=idx, y=df_consumption_day["Consumption Q3"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR), name="3rd Quartile (Q3)"))
+    fig.add_trace(go.Scatter(x=idx, y=df_consumption_day["Consumption Median"], mode="lines", line=dict(color=FLEX_COLOR, width=3), name="Median Price"))
+    fig.add_trace(go.Scatter(x=idx, y=df_consumption_day["Consumption Q1"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR), name="1st Quartile (Q1)"))
+    fig.update_layout(xaxis_title=idx.name, yaxis_title="Consumption (kWh)", legend_title_text="Metrics", hovermode="x unified")
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Only show the detailed analysis when consumption data includes 15 minutes intervals.
     if intervals <= 24: # Hourly data or less
         st.info("Please provide data with 15-minute intervals for a more detailed usage profile analysis.")
         return
@@ -301,21 +420,32 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
     st.markdown("This chart shows how much each consumption type (Base, Regular, Peak) contributes to your total usage, and the average spot price you paid for each.")
     profile_data = _compute_usage_profile_data(df_filtered)
 
+    # Display Thresholds
+    col1, col2 = st.columns(2)
+    col1.metric("Base Load Threshold", f"{base_threshold:.3f} kWh", help="Continuous Usage", width="stretch")
+    
+    # The peak_threshold passed is the influenceable part. Add base for the absolute value.
+    absolute_peak_threshold = base_threshold + peak_threshold
+    col2.metric("Peak Sustain Threshold", f"{absolute_peak_threshold:.3f} kWh", help="A peak event starts with a sharp increase and continues for every hour consumption stays above this level.", width="stretch")
+
     if not profile_data.empty:
         fig, ax = plt.subplots(figsize=(10, 5))
         cumulative_width = 0
         for _, row in profile_data.iterrows():
-            ax.bar(cumulative_width, row["avg_price"], width=row["proportion"], align="edge", color=FLEX_COLOR_LIGHT, edgecolor="white")
+            ax.bar(cumulative_width, row["avg_price"], width=row["proportion"], align="edge", color=FLEX_COLOR, edgecolor="white")
             annotation = f'{row["Profile"]}\n{row["proportion"]:.1%}\n€{row["avg_price"]:.3f}/kWh'
             ax.text(cumulative_width + row["proportion"]/2, row["avg_price"]/2, annotation, ha="center", va="center", color="black", fontsize=10, weight="bold")
             cumulative_width += row["proportion"]
         
         ax.set_ylabel("Average Spot Price (€/kWh)")
         ax.set_xlabel("Proportion of Total Consumption")
+        xticks = [0, 0.25, 0.5, 0.75, 1]
         ax.set_xlim(0, 1)
-        ax.set_xticks([0, 0.25, 0.5, 0.75, 1])
-        ax.set_xticklabels([f"{int(t*100)}%" for t in [0, 0.25, 0.5, 0.75, 1]])
-        st.pyplot(fig)
+        ax.set_xticks(xticks)
+        ax.set_xticklabels([f"{int(t*100)}%" for t in xticks])
+        ax.grid(axis="y", linestyle="--", alpha=0.7)
+        fig.tight_layout()
+        st.pyplot(fig, use_container_width=False)
 
     # Example Day Breakdown
     st.subheader("Example Day Breakdown")
@@ -328,11 +458,12 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         
         if st.button("Show a Different Day"):
             st.session_state.random_day = random.choice(available_dates)
+            st.rerun()
+            
+        df_hour = _compute_example_day(df_filtered, st.session_state.random_day, group=False)
 
-        df_day = df_filtered[df_filtered["date"] == st.session_state.random_day].copy()
-        df_day_plot = df_day.set_index("timestamp")[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]].rename(columns={"base_load_kwh": "Base", "regular_load_kwh": "Regular", "peak_load_kwh": "Peak"})
-        st.caption(f"Displaying data for {st.session_state.random_day.strftime('%A, %Y-%m-%d')} (Total: {df_day['consumption_kwh'].sum():.2f} kWh)")
-        st.bar_chart(df_day_plot, color=[STATIC_COLOR, FLEX_COLOR_LIGHT, FLEX_COLOR], y_label="Consumption (kWh)")
+        st.caption(f"Displaying data for {st.session_state.random_day.strftime('%A, %Y-%m-%d')} (Total: {df_hour.sum().sum():.2f} kWh)")
+        st.bar_chart(df_hour, color=[BASE_COLOR, PEAK_COLOR, REGULAR_COLOR], x_label="Hour of Day", y_label="Consumption (kWh)")
 
 # --- Tab: Yearly Summary ---
 
@@ -388,22 +519,29 @@ def _compute_download_data(df: pd.DataFrame) -> tuple[bytes, bytes]:
 
 def render_download_tab(df: pd.DataFrame, start_date: date, end_date: date):
     """Renders the content for the Download tab."""
-    st.subheader("Download Data")
     excel_full_data, excel_spot_data = _compute_download_data(df)
     
-    st.markdown("Download the full, detailed analysis including consumption classification and cost calculations for both tariff types.")
-    st.download_button(
-        label="Download Full Analysis (XLSX)",
-        data=excel_full_data,
-        file_name=f"electricity_analysis_{start_date}_to_{end_date}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-    
-    st.markdown("---")
-    st.markdown("Download only the hourly EPEX spot prices for the selected period.")
-    st.download_button(
-        label="Download Spot Prices (XLSX)",
-        data=excel_spot_data,
-        file_name=f"spot_prices_{start_date}_to_{end_date}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+    col1, col2 = st.columns(2, border=True)
+    with col1:
+        st.markdown("Download the full, detailed analysis including consumption classification and cost calculations for both tariff types.")
+        st.download_button(
+            label="Download Full Analysis (XLSX)",
+            data=excel_full_data,
+            file_name=f"electricity_analysis_{start_date}_to_{end_date}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    with col2:
+        st.markdown("Download only the hourly EPEX spot prices for the selected period.")
+        st.download_button(
+            label="Download Spot Prices (XLSX)",
+            data=excel_spot_data,
+            file_name=f"spot_prices_{start_date}_to_{end_date}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+# --- Footer ---
+st.cache_data
+def render_footer():
+    """Renders the footer with information about the project and further links."""
+    st.markdown("\n\n---")
+    st.markdown("""Developed by [__albortino__](https://github.com/albortino). This tool builds upon [awattar backtesting](https://awattar-backtesting.github.io), which provides further use cased and analyses.""")

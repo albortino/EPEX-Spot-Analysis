@@ -30,7 +30,6 @@ RED = "#d65f5f"
 ABSENCE_THRESHOLD = 0.75
 
 SPOT_PRICE_CACHE_FILE = "spot_prices.csv"
-AWATTAR_COUNTRY = "at" # or de
 
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -209,6 +208,7 @@ def get_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager):
     with st.sidebar:
         st.header("Configuration")
         
+
         # Filter the date of the analysis.
         st.subheader("1. Analysis Period")
         min_date, max_date = _get_min_max_date(df)

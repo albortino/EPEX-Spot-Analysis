@@ -5,7 +5,7 @@ import streamlit as st
 import requests
 import os
 from datetime import datetime, date
-from config import SPOT_PRICE_CACHE_FILE, AWATTAR_COUNTRY, LOCAL_TIMEZONE, DATE_FORMAT
+from config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, DATE_FORMAT
 from parser import ConsumptionDataParser
 
 # --- Spot Price Data Handling ---
@@ -17,12 +17,12 @@ def _load_from_cache(file_path: str) -> pd.DataFrame:
         df_cache["timestamp"] = pd.to_datetime(df_cache["timestamp"], utc=True)
         return df_cache
     except Exception as e:
-        st.warning(f"Could not read or parse cache file '{SPOT_PRICE_CACHE_FILE}'. Refetching data. Error: {e}")
+        st.warning(f"Could not read or parse cache file '{file_path}'. Refetching data. Error: {e}")
         return pd.DataFrame()
 
-def _fetch_spot_data(start: date, end: date) -> pd.DataFrame:
+def _fetch_spot_data(country: str, start: date, end: date, cache_filename: str) -> pd.DataFrame:
     """Fetches spot data from the aWATTar API for a given date range."""
-    base_url = f"https://api.awattar.{AWATTAR_COUNTRY}/v1/marketdata"
+    base_url = f"https://api.awattar.{country}/v1/marketdata"
     start_dt = datetime.combine(start, datetime.min.time())
     end_dt = datetime.combine(end + pd.Timedelta(days=1), datetime.min.time())
     params = {"start": int(start_dt.timestamp() * 1000), "end": int(end_dt.timestamp() * 1000)}
@@ -40,7 +40,8 @@ def _fetch_spot_data(start: date, end: date) -> pd.DataFrame:
         df["timestamp"] = pd.to_datetime(df["start_timestamp"], unit="ms", utc=True)
         df["spot_price_eur_kwh"] = df["marketprice"] / 1000 * 1.2  # Convert Eur/MWh to Eur/kWh and add 20% VAT
         df_to_return = df[["timestamp", "spot_price_eur_kwh"]]
-        df_to_return.to_csv(SPOT_PRICE_CACHE_FILE, index=False)
+        
+        df_to_return.to_csv(cache_filename, index=False)
         return df_to_return
     except requests.exceptions.RequestException as e:
         st.error(f"Failed to fetch spot price data: {e}")
@@ -48,14 +49,15 @@ def _fetch_spot_data(start: date, end: date) -> pd.DataFrame:
         st.error("Received unexpected data from the spot price API.")
     return pd.DataFrame()
 
-@st.cache_data(ttl=3600)
-def get_spot_data(start: date, end: date) -> pd.DataFrame:
+@st.cache_data
+def get_spot_data(country: str, start: date, end: date) -> pd.DataFrame:
     """
     Fetches spot market price data, using a local cache to avoid redundant API calls.
     """
+    country_cache_filename = f"{country}_{SPOT_PRICE_CACHE_FILE}"
     now = datetime.now().strftime(DATE_FORMAT)
-    if os.path.exists(SPOT_PRICE_CACHE_FILE):
-        df_cache = _load_from_cache(SPOT_PRICE_CACHE_FILE)
+    if os.path.exists(country_cache_filename):
+        df_cache = _load_from_cache(country_cache_filename)
         if not df_cache.empty:
             min_cached = df_cache["timestamp"].min().date()
             max_cached = df_cache["timestamp"].max().date()
@@ -64,7 +66,7 @@ def get_spot_data(start: date, end: date) -> pd.DataFrame:
                 return df_cache[(df_cache["timestamp"].dt.date >= start) & (df_cache["timestamp"].dt.date <= end)]
     
     print(f"{now}: Cache insufficient or missing. Will fetch data from aWATTar.")
-    return _fetch_spot_data(start, end)
+    return _fetch_spot_data(country, start, end, country_cache_filename)
 
 # --- Consumption Data Handling ---
 
