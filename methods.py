@@ -1,7 +1,12 @@
 import pandas as pd
 
-
 def get_intervals_per_day(df: pd.DataFrame) -> int:
+    if "date" in df.columns:
+         return df.groupby("date").size().mode().iloc[0]
+
+    df = df.copy()
+    df["date"] = df["timestamp"].dt.date
+    
     return df.groupby("date").size().mode().iloc[0]
 
 def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame, float, float]:

@@ -194,7 +194,7 @@ def _return_tariff_selection(flex_tariff_options: dict[str, Tariff], static_tari
             else:
                 on_top_perc = 0.0
             
-            fee = st.number_input("Monthly Fee (€)", value=selected_tariff.monthly_fee, min_value=0.0, step=0.1)
+            fee = st.number_input("Monthly Fee (€)", value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f")
             
             # Create the tariff instance and append it to a list that will be returned.
             final_tariff = Tariff(name=selected_tariff.name, type=selected_tariff.type, price_kwh=on_top, monthly_fee=fee, price_kwh_pct=on_top_perc)
@@ -256,14 +256,15 @@ def render_recommendation(df: pd.DataFrame):
     peak_ratio = peak_cheap_kwh / peak_total_kwh if peak_total_kwh > 0 else 0
 
     if savings > 0:
-        st.success(f"✅ Flexible Plan Recommended: You could have saved €{savings:.2f}")
+        
         if peak_ratio > 0.3:
-            st.write(f"This is a great fit. You align **{peak_ratio:.0%}** of your peak usage with the cheapest market prices.")
+            additional_text = f"This is a great fit. You align **{peak_ratio:.0%}** of your peak usage with the cheapest market prices."
         else:
-            st.write("You could save even more by shifting high-consumption activities to times with lower spot prices.")
+            additional_text = "You could save even more by shifting high-consumption activities to times with lower spot prices."
+        
+        st.success(f"✅ Flexible Plan Recommended: You could have saved €{savings:.2f}\n\n{additional_text}")
     else:
-        st.warning(f"⚠️ Static Plan Recommended: The flexible plan would have cost €{-savings:.2f} more.")
-        st.write("A fixed price offers better cost stability for your current usage pattern.")
+        st.warning(f"⚠️ Static Plan Recommended: The flexible plan would have cost €{-savings:.2f} more.\n\nA fixed price offers better cost stability for your current usage pattern.")
 
 @st.cache_data(ttl=3600)
 def _compute_price_data(df: pd.DataFrame, resolution: str) -> pd.DataFrame:
@@ -436,6 +437,9 @@ def _compute_usage_data(df: pd.DataFrame, day_filter: str) -> tuple[pd.DataFrame
     df["day_type"] = df["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.dayofweek.apply(lambda x: "Weekend" if x >= 5 else "Weekday")
     df_filtered = df[df["day_type"] == day_filter[:-1]] if day_filter != "All Days" else df
     
+    # Filter empty consumption, e.g. when only hourly data is available.
+    df_filtered = df_filtered[df_filtered["consumption_kwh"] > 0]
+    
     if df_filtered.empty:
         st.warning(f"No data available for {day_filter.lower()}.")
         return pd.DataFrame(), list()
@@ -490,47 +494,130 @@ def _compute_example_day(df: pd.DataFrame, random_day) -> tuple[pd.DataFrame,pd.
         return pd.DataFrame(), pd.DataFrame()
 
 
+@st.cache_data(ttl=3600)
+def _compute_new_data(df: pd.DataFrame, intervals_per_day: int) -> pd.DataFrame:
+    """Computes and caches the usage data for the selected resolution."""
+    
+    print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Consumption Data")
+    
+    #df = df.copy()
+    #df = df.set_index("timestamp").resample("h")[["consumption_kwh"]].sum().reset_index()
+    
+    # Define the aggregation logic once to be reused.
+    price_agg_dict = {
+        "consumption_kwh": [
+            ("q1", lambda x: x.quantile(0.25)),
+            ("median", lambda x: x.quantile(0.50)),
+            ("q3", lambda x: x.quantile(0.75))
+        ]
+    }
+    
+    # A dictionary to map the resolution to the correct pandas Series for grouping.
+    resolution_config = {
+        "Hourly": {"grouper": df["timestamp"].dt.hour, "x_axis_title": "Hour of Day"},
+        "Weekly": {"grouper": df["timestamp"].dt.dayofweek, "x_axis_title": "Day of Week"},
+        "Monthly": {"grouper": df["timestamp"].dt.month, "x_axis_title": "Month"}
+    }
+    
+    if intervals_per_day == 24:
+        resolution = "Monthly"
+    else:
+        resolution = "Hourly"
+    
+    config = resolution_config[resolution]
+    df_price = df.groupby(config["grouper"]).agg(price_agg_dict)
+    df_price.columns = ["Consumption Q1", "Consumption Median", "Consumption Q3"]
+    df_price.index.name = config["x_axis_title"]
+    
+# Special handling for weekly resolution to show weekday names.
+    if resolution == "Weekly":
+        x_axis_map = {0: "Mon", 1: "Tue", 2: "Wed", 3: "Thu", 4: "Fri", 5: "Sat", 6: "Sun"}
+    elif resolution == "Monthly":
+        x_axis_map = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun", 7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}
+    else:
+        x_axis_map = {i: str(i) for i in range(24)}
+        
+    df_price.index = df_price.index.map(x_axis_map)
+    df_price = df_price.reindex(x_axis_map.values()) # Ensure correct order
+
+    return df_price
+
+
+
 def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_threshold: float):
     """Renders the content for the "Usage Pattern Analysis" tab."""
     print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Usage Pattern")
 
     st.subheader("Analyze Your Consumption Profile")
+       
     
     # Get weekend/weekday information.
     day_filter = st.radio("Filter data by:", ("All Days", "Weekdays", "Weekends"), horizontal=True)
     
-    st.subheader("Consumption & Cost Profile")
-    st.markdown("This chart visualizes the distribution of electricity consumption across different load types: Base Load, Regular Load, and Peak Load. "
-                "Each segment represents a proportionate share of total consumption over time, providing insights into how energy usage is distributed throughout the day. "
-                "Base Load represents the **minimal load measured over multiple hours** (e. g., WiFi, standby, basic lights). "
-                "Peak usage is defined by **sharp inclines and a long duration of high loads**, which can be **postponed to different times** during a day.")
+    intervals_per_day = get_intervals_per_day(df)
     
     df_filtered, available_dates = _compute_usage_data(df, day_filter)
-    profile_data = _compute_usage_profile_data(df_filtered)
+    df_consumption_day = _compute_new_data(df_filtered, intervals_per_day)
     
-    # Build a Marimekko chart for every load type.
-    if not profile_data.empty:
-        import matplotlib.pyplot as plt
-        fig, ax = plt.subplots(figsize=(10, 5))
+    # --- Quartile Distribution Chart ---
+    st.subheader("Consumption Over Time")
+    st.markdown(
+        "This chart illustrates the statistical distribution of your consumption for the selected time resolution. "
+        "The solid line represents the **median (50th percentile)** price, while the dotted lines show the "
+        "**1st Quartile (Q1, 25th percentile)** and **3rd Quartile (Q3, 75th percentile)**."
+    )
+
+    fig = go.Figure()
+
+    # Add Q1 and Q3 traces with dotted lines.
+    fig.add_trace(go.Scatter(x=df_consumption_day.index, y=df_consumption_day["Consumption Q3"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR), name="3rd Quartile (Q3)"))
+    
+    # Add the Median trace as a solid line.
+    fig.add_trace(go.Scatter(x=df_consumption_day.index, y=df_consumption_day["Consumption Median"], mode="lines", line=dict(color=FLEX_COLOR, width=3), name="Median Price"))
+    
+    # Q1
+    fig.add_trace(go.Scatter(x=df_consumption_day.index, y=df_consumption_day["Consumption Q1"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR), name="1st Quartile (Q1)"))
+
+    fig.update_layout(xaxis_title=df_consumption_day.index.name, yaxis_title="Consumption (kWh)", legend_title_text="Metrics", hovermode="x unified")
+    st.plotly_chart(fig, use_container_width=True)
         
-        cumulative_width = 0
-        for _, row in profile_data.iterrows():
-            ax.bar(cumulative_width, row["avg_price"], width=row["proportion"], align="edge", color=FLEX_COLOR, edgecolor="white")
-            annotation_text = f"{row["Profile"]}\n\n{row["proportion"]:.1%} of kWh\nAvg. {row["kwh_mean"]:.2f}/day\n€{row["avg_price"]:.3f}/kWh"
-            ax.text(cumulative_width + row["proportion"]/2, row["avg_price"]/2, annotation_text, ha="center", va="center", color="white", fontsize=10, weight="bold")
-            cumulative_width += row["proportion"]
+    # Return nothing more if no further analysis can be made.
+    if get_intervals_per_day(df) == 24:
+        st.info("Please provide 15-minute intervals to get a more detailed usage analysis!")
+        return
+    
+    else:
+        st.subheader("Consumption & Cost Profile")
+        st.markdown("This chart visualizes the distribution of electricity consumption across different load types: Base Load, Regular Load, and Peak Load. "
+                    "Each segment represents a proportionate share of total consumption over time, providing insights into how energy usage is distributed throughout the day. "
+                    "Base Load represents the **minimal load measured over multiple hours** (e. g., WiFi, standby, basic lights). "
+                    "Peak usage is defined by **sharp inclines and a long duration of high loads**, which can be **postponed to different times** during a day.")
+        
+        profile_data = _compute_usage_profile_data(df_filtered)
+
+        # Build a Marimekko chart for every load type.
+        if not profile_data.empty:
+            import matplotlib.pyplot as plt
+            fig, ax = plt.subplots(figsize=(10, 5))
             
-        ax.set_ylabel("Average Spot Price (€/kWh)")
-        ax.set_xlabel("Proportion of Total Consumption")
-        
-        xticks = [0, 0.25, 0.5, 0.75, 1]
-        
-        ax.set_xlim(0, 1)
-        ax.set_xticks(xticks)
-        ax.set_xticklabels([f"{int(t*100)}%" for t in xticks])
-        ax.grid(axis="y", linestyle="--", alpha=0.7)
-        fig.tight_layout()
-        st.pyplot(fig, use_container_width=False)
+            cumulative_width = 0
+            for _, row in profile_data.iterrows():
+                ax.bar(cumulative_width, row["avg_price"], width=row["proportion"], align="edge", color=FLEX_COLOR, edgecolor="white")
+                annotation_text = f"{row["Profile"]}\n\n{row["proportion"]:.1%} of kWh\nAvg. {row["kwh_mean"]:.2f}/day\n€{row["avg_price"]:.3f}/kWh"
+                ax.text(cumulative_width + row["proportion"]/2, row["avg_price"]/2, annotation_text, ha="center", va="center", color="white", fontsize=10, weight="bold")
+                cumulative_width += row["proportion"]
+                
+            ax.set_ylabel("Average Spot Price (€/kWh)")
+            ax.set_xlabel("Proportion of Total Consumption")
+            
+            xticks = [0, 0.25, 0.5, 0.75, 1]
+            
+            ax.set_xlim(0, 1)
+            ax.set_xticks(xticks)
+            ax.set_xticklabels([f"{int(t*100)}%" for t in xticks])
+            ax.grid(axis="y", linestyle="--", alpha=0.7)
+            fig.tight_layout()
+            st.pyplot(fig, use_container_width=False)
     
     # Show the distribution of each load type on a random example.
     st.subheader("Example Day Breakdown")
@@ -654,6 +741,8 @@ def merge_consumption_with_prices(df_consumption: pd.DataFrame, df_spot_prices: 
 
     start_date, end_date = _get_min_max_date(df_consumption)
     
+    print("Consumption", df_consumption.head())
+    print("Spot Prices", df_spot_prices.head())
     # Merge on timestamp with a tolerance of 59 minutes such that df_consumption can have 15 minutes timespans and df_spot_prices hourly prices.
     df_merged = pd.merge_asof(df_consumption, df_spot_prices, on="timestamp", direction="backward", tolerance=pd.Timedelta("59min"))
     
@@ -664,7 +753,7 @@ def merge_consumption_with_prices(df_consumption: pd.DataFrame, df_spot_prices: 
     df_merged["timestamp"] = df_merged["timestamp"].dt.tz_convert(LOCAL_TIMEZONE) 
             
     df_merged["date"] = df_merged["timestamp"].dt.date
-    
+    print("Merged", df_merged.head())
     return df_merged
 
 @st.cache_data(ttl=3600)
@@ -683,7 +772,7 @@ tariff_manager = TariffManager("flex_tariffs.json", "static_tariffs.json")
 if not uploaded_file:
     st.info("👋 Welcome! Please upload your consumption data to begin.")
 else:
-    df_consumption = process_consumption_data(uploaded_file, aggregation_level = "15min")
+    df_consumption = process_consumption_data(uploaded_file, aggregation_level = "1h")
     
     if not df_consumption.empty:
         df_spot_prices = get_spot_data(*_get_min_max_date(df_consumption))
