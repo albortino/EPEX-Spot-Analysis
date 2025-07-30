@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import matplotlib.pyplot as plt
 import random
 from datetime import datetime, date
 
@@ -11,6 +10,7 @@ from methods.tariffs import Tariff, TariffManager
 from methods.utils import get_min_max_date, to_excel, get_intervals_per_day, get_aggregation_config
 import methods.data_loader as data_loader
 import methods.ui_components as ui_components
+import methods.charts as charts
 
 # --- Sidebar and Input Controls ---
 
@@ -216,7 +216,7 @@ def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     st.subheader("Average Price Heatmap (Month vs. Hour)")
     st.markdown("This heatmap visualizes the average spot price for each hour across the months, helping to identify recurring daily and seasonal patterns.")
     heatmap_data = _compute_heatmap_data(df)
-    heatmap_fig = px.imshow(heatmap_data, labels=dict(x="Hour of Day", y="Month", color="Avg Spot Price (€/kWh)"), aspect="auto", color_continuous_scale="Viridis")
+    heatmap_fig = charts.get_heatmap(heatmap_data)
     st.plotly_chart(heatmap_fig, use_container_width=True)
 
 # --- Tab: Cost Comparison ---
@@ -279,6 +279,7 @@ def render_cost_comparison_tab(df: pd.DataFrame):
 def _compute_usage_profile_data(df: pd.DataFrame) -> pd.DataFrame:
     """Computes and caches the proportion and average cost for each usage profile."""
     print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Usage Profile Data")
+    
     load_types = ["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]
     profile_data = []
     total_kwh = df["consumption_kwh"].sum()
@@ -323,7 +324,7 @@ def _compute_consumption_quartiles(df: pd.DataFrame, intervals_per_day: int) -> 
     config = get_aggregation_config(df, resolution)
     df_consumption_quartiles = df.groupby(config["grouper"]).agg(consumption_agg_dict)
     df_consumption_quartiles.columns = ["Consumption Q1", "Consumption Median", "Consumption Q3"]
-    df_consumption_quartiles.index.name = config["x_axis_title"]        
+    df_consumption_quartiles.index.name = config["name"]        
     df_consumption_quartiles.index = df_consumption_quartiles.index.map(config["x_axis_map"])
     df_consumption_quartiles = df_consumption_quartiles.reindex(config["x_axis_map"].values())
 
@@ -345,9 +346,9 @@ def _compute_example_day(df: pd.DataFrame, random_day, group: bool = False) -> p
                 df_hour.groupby("hour")[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
                 .sum())
         else:
-            df_hour = df_hour.set_index("timestamp")
+            df_hour = df_hour.set_index("timestamp")[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
         
-        df_hour = df_hour[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
+        #df_hour = df_hour[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
         
         df_hour = df_hour.rename(columns={
                 "base_load_kwh": "Base Load",
@@ -385,13 +386,8 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         "The solid line represents the **median (50th percentile)** consumption, while the dotted lines show the first and third Quartile."
     )
 
-    fig = go.Figure()
-    idx = df_consumption_day.index
-    fig.add_trace(go.Scatter(x=idx, y=df_consumption_day["Consumption Q3"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR), name="3rd Quartile (Q3)"))
-    fig.add_trace(go.Scatter(x=idx, y=df_consumption_day["Consumption Median"], mode="lines", line=dict(color=FLEX_COLOR, width=3), name="Median Price"))
-    fig.add_trace(go.Scatter(x=idx, y=df_consumption_day["Consumption Q1"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR), name="1st Quartile (Q1)"))
-    fig.update_layout(xaxis_title=idx.name, yaxis_title="Consumption (kWh)", legend_title_text="Metrics", hovermode="x unified")
-    st.plotly_chart(fig, use_container_width=True)
+    consumption_fig = charts.get_consumption_chart(df_consumption_day)
+    st.plotly_chart(consumption_fig, use_container_width=True)
     
     # Only show the detailed analysis when consumption data includes 15 minutes intervals.
     if intervals <= 24: # Hourly data or less
@@ -412,23 +408,8 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
     col2.metric("Peak Sustain Threshold", f"{absolute_peak_threshold:.3f} kWh", help="A peak event starts with a sharp increase and continues for every hour consumption stays above this level.", width="stretch")
 
     if not profile_data.empty:
-        fig, ax = plt.subplots(figsize=(10, 5))
-        cumulative_width = 0
-        for _, row in profile_data.iterrows():
-            ax.bar(cumulative_width, row["avg_price"], width=row["proportion"], align="edge", color=FLEX_COLOR, edgecolor="white")
-            annotation = f'{row["Profile"]}\n{row["proportion"]:.1%}\n€{row["avg_price"]:.3f}/kWh'
-            ax.text(cumulative_width + row["proportion"]/2, row["avg_price"]/2, annotation, ha="center", va="center", color="black", fontsize=10, weight="bold")
-            cumulative_width += row["proportion"]
-        
-        ax.set_ylabel("Average Spot Price (€/kWh)")
-        ax.set_xlabel("Proportion of Total Consumption")
-        xticks = [0, 0.25, 0.5, 0.75, 1]
-        ax.set_xlim(0, 1)
-        ax.set_xticks(xticks)
-        ax.set_xticklabels([f"{int(t*100)}%" for t in xticks])
-        ax.grid(axis="y", linestyle="--", alpha=0.7)
-        fig.tight_layout()
-        st.pyplot(fig, use_container_width=False)
+        marimekko_fig = charts.get_marimekko_chart(profile_data)      
+        st.plotly_chart(marimekko_fig, use_container_width=True)
 
     # Example Day Breakdown
     st.subheader("Example Day Breakdown")

@@ -19,6 +19,7 @@ REGULAR_COLOR = FLEX_COLOR
 PEAK_COLOR = "#f9dd07" 
 GREEN = "#5fba7d"
 RED = "#d65f5f"
+MEKKO_BORDER = 0.002
 
 # --- Analysis Parameters ---
 ABSENCE_THRESHOLD = 0.75 # Determines a day of absence if consumption is below 75% of the daily base load.
