@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 import random
 from datetime import datetime, date
 
 from methods.config import *
 from methods.tariffs import Tariff, TariffManager
-from methods.utils import get_min_max_date, to_excel, get_intervals_per_day, get_aggregation_config
+from methods.utils import get_min_max_date, to_excel, get_intervals_per_day, get_aggregation_config, calculate_granular_data
 import methods.data_loader as data_loader
 import methods.charts as charts
 
@@ -160,6 +159,12 @@ def render_absence_days(df: pd.DataFrame, base_threshold: float) -> pd.DataFrame
 def render_recommendation(df: pd.DataFrame):
     """Displays the final tariff recommendation based on calculated savings."""
     print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Recommendation")
+
+    is_granular_data = calculate_granular_data(df)
+    if not is_granular_data:
+        st.warning(f"⚠️ Static Plan Recommended: A flexible plan is only recommended for hourly or 15-minute data.")
+        return
+
     savings = df["total_cost_static"].sum() - df["total_cost_flexible"].sum()
 
     # Calculate the proportion of peak consumption that occurs during the cheapest 25% of hours
@@ -247,7 +252,11 @@ def render_cost_comparison_tab(df: pd.DataFrame):
     """Renders the content for the 'Cost Comparison' tab."""
 
     print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Cost Comparison Tab")
-    
+
+    is_granular_data = calculate_granular_data(df)
+    if not is_granular_data:
+        st.info("Flexible cost comparison is only meaningful for hourly or 15-minute consumption data. The flexible tariff results are hidden.")
+
     resolution = st.radio("Select Time Resolution", ("Daily", "Weekly", "Monthly"), horizontal=True, key="summary_res")
     
     df_summary = _compute_cost_comparison_data(df, resolution)
@@ -260,20 +269,32 @@ def render_cost_comparison_tab(df: pd.DataFrame):
     with col1:
         st.subheader("Total Costs per Period")
         st.markdown("Compare the total energy bill for both tariff types over time, including energy usage costs and monthly fees.")
-        st.line_chart(df_summary.set_index("Period"), y=["Total Flexible Cost", "Total Static Cost"], y_label="Total Cost (€)", color=[FLEX_COLOR, STATIC_COLOR])
+        y_cols_total = ["Total Flexible Cost", "Total Static Cost"] if is_granular_data else ["Total Static Cost"]
+        colors_total = [FLEX_COLOR, STATIC_COLOR] if is_granular_data else [STATIC_COLOR]
+        st.line_chart(df_summary.set_index("Period"), y=y_cols_total, y_label="Total Cost (€)", color=colors_total)
 
     with col2:
         st.subheader("Average Price per kWh")
         st.markdown("See the effective price per kWh after accounting for both variable costs and fixed fees.")
-        df_summary["Avg. Flexible Price (€/kWh)"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
         df_summary["Avg. Static Price (€/kWh)"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
-        st.line_chart(df_summary.set_index("Period"), y=["Avg. Flexible Price (€/kWh)", "Avg. Static Price (€/kWh)"], y_label="Average Price (€/kWh)", color=[FLEX_COLOR, STATIC_COLOR])
+        if is_granular_data:
+            df_summary["Avg. Flexible Price (€/kWh)"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
+        
+        y_cols_avg = ["Avg. Flexible Price (€/kWh)", "Avg. Static Price (€/kWh)"] if is_granular_data else ["Avg. Static Price (€/kWh)"]
+        colors_avg = [FLEX_COLOR, STATIC_COLOR] if is_granular_data else [STATIC_COLOR]
+        st.line_chart(df_summary.set_index("Period"), y=y_cols_avg, y_label="Average Price (€/kWh)", color=colors_avg)
             
     st.subheader("Detailed Comparison Table")
     st.text("Review the costs and savings for each period.", help="Note: For Austria, this table does not include 'Strompreisbremse' in the years before 2025, nor 'Energieabgabe' or network fees!")
-    styler = df_summary[["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]].style
-    styler = styler.map(lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}", subset=["Difference (€)"]) #type: ignore
-    styler = styler.format({"Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"})
+    if is_granular_data:
+        cols_to_show = ["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]
+        styler = df_summary[cols_to_show].style
+        styler = styler.map(lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}", subset=["Difference (€)"]) #type: ignore
+        styler = styler.format({"Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"})
+    else:
+        cols_to_show = ["Period", "Total Consumption", "Total Static Cost"]
+        styler = df_summary[cols_to_show].style
+        styler = styler.format({"Total Consumption": "{:.2f} kWh", "Total Static Cost": "€{:.2f}"})
     st.dataframe(styler, hide_index=True, use_container_width=True)
 
 # --- Tab: Usage Pattern Analysis ---

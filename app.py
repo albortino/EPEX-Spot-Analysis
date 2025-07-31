@@ -24,7 +24,8 @@ def main():
         st.info("👋 Welcome! Please upload your consumption data to begin.")
         st.markdown("### Introduction\nThis project was influenced by https://awattar-backtesting.github.io/, which provides a simple and effective overview.\n\n"
                    "This tool provides further insights into your consumption behavior and help you to choose the most economic tariff plan.\n\n"
-                   "For a detailed description and explanation please refer to this project's [Read Me](https://github.com/albortino/EPEX-Spot-Analysis/blob/main/readme.md).")
+                   "For a detailed description and explanation please refer to this project's [Read Me](https://github.com/albortino/EPEX-Spot-Analysis/blob/main/readme.md).\n\n"
+                   "IMPORTANT: File uploads are in fact uploaded to a server when the app is running on Steamlit Cloud. Even though no file is stored by this script, others might have access to it. Therefore, please anonymize any personal data first, but don't delete the columns.")
         ui_components.render_footer()
         return
 

@@ -533,8 +533,8 @@ class ConsumptionDataParser:
             df["timestamp"] = localize_with_dst_disambiguation(df, "Europe/Vienna")
             #df["timestamp"] = df["timestamp_local"].dt.tz_localize(self.local_timezone, ambiguous='infer').dt.tz_convert("UTC")
 
+        # Resamples the data to hourly basis if it is not in 15 minutes (e.g. for days).
         aggregation_level = "15min" if get_intervals_per_day(df) > 24 else "h"
-        # Standardize and resample.
         df = df.set_index("timestamp")["consumption_kwh"].resample(aggregation_level).sum().dropna().reset_index()
         
         return df[["timestamp", "consumption_kwh"]].reset_index(drop=True)

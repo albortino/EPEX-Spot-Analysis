@@ -53,3 +53,18 @@ def get_aggregation_config(df: pd.DataFrame, resolution: str) -> dict:
 
     config = resolution_config[resolution]
     return config
+
+def calculate_granular_data(df: pd.DataFrame) -> bool:
+    """
+    Check if data is granular enough for a meaningful flexible cost comparison.
+    This is true for hourly or 15-min data, but not for daily data resampled to hourly.
+    """
+    non_zero_consumption_df = df[df['consumption_kwh'] > 0.001]
+    is_granular_data = True
+    if not non_zero_consumption_df.empty:
+        # If all non-zero consumption occurs only at midnight, it's likely daily data
+        # that has been resampled, making a flexible cost comparison misleading.
+        if (non_zero_consumption_df['timestamp'].dt.hour == 0).all():
+            is_granular_data = False
+            
+    return is_granular_data

@@ -41,8 +41,8 @@ def get_consumption_chart(df: pd.DataFrame) -> go.Figure:
     fig.add_trace(go.Scatter( x=idx, y=df["Consumption Q3"], mode="lines", line=dict(width=0), fill="tonexty", fillcolor=FLEX_COLOR_SHADE, name="Q1–Q3 Range", showlegend=False))
     
     # Add the visible lines on top of the fill area.
-    fig.add_trace(go.Scatter(x=idx, y=df["Consumption Median"], mode="lines", line=dict(color=FLEX_COLOR, width=3), name="Median Price"))
     fig.add_trace(go.Scatter(x=idx, y=df["Consumption Q3"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR), name="3rd Quartile (Q3)"))
+    fig.add_trace(go.Scatter(x=idx, y=df["Consumption Median"], mode="lines", line=dict(color=FLEX_COLOR, width=3), name="Median Price"))
     fig.add_trace(go.Scatter(x=idx, y=df["Consumption Q1"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR), name="1st Quartile (Q1)"))
     fig.update_layout(xaxis_title=idx.name, yaxis_title="Consumption (kWh)", legend_title_text="Metrics", hovermode="x unified")
 
