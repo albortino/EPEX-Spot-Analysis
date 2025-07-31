@@ -1,20 +1,21 @@
 import streamlit as st
 import pandas as pd
 import random
-from datetime import datetime, date
+from datetime import date
 
 from methods.config import *
 from methods.tariffs import Tariff, TariffManager
 from methods.utils import get_min_max_date, to_excel, get_intervals_per_day, get_aggregation_config, calculate_granular_data
 import methods.data_loader as data_loader
 import methods.charts as charts
+from methods.logger import logger
 
 # --- Sidebar and Input Controls ---
 
 @st.cache_data(ttl=60*10)
 def _compare_all_tariffs(df_consumption: pd.DataFrame, _tariff_manager: TariffManager, country: str) -> tuple[Tariff | None, Tariff | None]:
     """Finds the cheapest flex and static tariffs from the predefined lists."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Calculating cheapest tariff comparison")
+    logger.log("Calculating cheapest tariff comparison", )
     
     flex_options = _tariff_manager.get_flex_tariffs_with_custom()
     static_options = _tariff_manager.get_static_tariffs_with_custom()
@@ -57,7 +58,7 @@ def _compare_all_tariffs(df_consumption: pd.DataFrame, _tariff_manager: TariffMa
 
 def _return_tariff_selection(_tariff_manager: TariffManager) -> tuple[Tariff, Tariff]:
     """Renders tariff selection expanders in the UI for user customization."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Tariff Selection")
+    logger.log("Rendering Tariff Selection")
     
     final_tariffs = []
     options = [
@@ -88,7 +89,7 @@ def _return_tariff_selection(_tariff_manager: TariffManager) -> tuple[Tariff, Ta
 
 def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager) -> tuple[str, date, date, Tariff, Tariff, float]:
     """Renders all sidebar inputs and returns the configuration values."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Sidebar")
+    logger.log("Rendering Sidebar")
     with st.sidebar:
         st.header("Configuration")
         
@@ -132,7 +133,7 @@ def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager) -> tu
 @st.cache_data(ttl=3600)
 def _compute_absence_data(df: pd.DataFrame, base_threshold: float, absence_threshold: float) -> list:
     """Computes and caches the days of absence based on low daily consumption."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Absence Data")
+    logger.log("Computing Absence Data")
     if 'date' not in df.columns:
         df['date'] = df['timestamp'].dt.date
     daily_consumption = df.groupby('date')["consumption_kwh"].sum()
@@ -158,7 +159,7 @@ def render_absence_days(df: pd.DataFrame, base_threshold: float) -> pd.DataFrame
 @st.cache_data(ttl=3600)
 def render_recommendation(df: pd.DataFrame):
     """Displays the final tariff recommendation based on calculated savings."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Recommendation")
+    logger.log("Rendering Recommendation")
 
     is_granular_data = calculate_granular_data(df)
     if not is_granular_data:
@@ -190,7 +191,7 @@ def render_recommendation(df: pd.DataFrame):
 @st.cache_data(ttl=3600)
 def _compute_price_distribution_data(df: pd.DataFrame, resolution: str) -> pd.DataFrame:
     """Computes and caches the quartile price data for the selected resolution."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Price Distribution Data")
+    logger.log("Computing Price Distribution Data")
     price_agg_dict = {"spot_price_eur_kwh": [("q1", lambda x: x.quantile(0.25)), ("median", "median"), ("q3", lambda x: x.quantile(0.75))]}
     
     config = get_aggregation_config(df, resolution)
@@ -204,12 +205,12 @@ def _compute_price_distribution_data(df: pd.DataFrame, resolution: str) -> pd.Da
 @st.cache_data(ttl=3600)
 def _compute_heatmap_data(df: pd.DataFrame) -> pd.DataFrame:
     """Computes and caches the data needed for the price heatmap."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Heatmap Data")
+    logger.log("Computing Heatmap Data")
     return df.pivot_table(values="spot_price_eur_kwh", index=df["timestamp"].dt.month, columns=df["timestamp"].dt.hour, aggfunc="mean")
 
 def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     """Renders the interactive analysis of electricity spot prices."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Price Analysis Tab")
+    logger.log("Rendering Price Analysis Tab")
     
     resolution = st.radio("Select Time Resolution", ("Hourly", "Weekly", "Monthly"), horizontal=True, key="price_res")
     
@@ -232,7 +233,7 @@ def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
 @st.cache_data(ttl=3600)
 def _compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataFrame:
     """Computes and caches aggregated cost data for comparison."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Cost Comparison Data")
+    logger.log("Computing Cost Comparison Data")
     freq_map = {"Daily": "D", "Weekly": "W-MON", "Monthly": "ME"}
     grouper = pd.Grouper(key="timestamp", freq=freq_map[resolution])
 
@@ -251,7 +252,7 @@ def _compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataF
 def render_cost_comparison_tab(df: pd.DataFrame):
     """Renders the content for the 'Cost Comparison' tab."""
 
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Cost Comparison Tab")
+    logger.log("Rendering Cost Comparison Tab")
 
     is_granular_data = calculate_granular_data(df)
     if not is_granular_data:
@@ -302,7 +303,7 @@ def render_cost_comparison_tab(df: pd.DataFrame):
 @st.cache_data(ttl=3600)
 def _compute_usage_profile_data(df: pd.DataFrame) -> pd.DataFrame:
     """Computes and caches the proportion and average cost for each usage profile."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Usage Profile Data")
+    logger.log("Computing Usage Profile Data")
     
     load_types = ["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]
     profile_data = []
@@ -329,7 +330,7 @@ def _compute_usage_profile_data(df: pd.DataFrame) -> pd.DataFrame:
 def _compute_consumption_quartiles(df: pd.DataFrame, intervals_per_day: int) -> pd.DataFrame:
     """Computes and caches the usage data for the selected resolution."""
     
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Consumption Data")
+    logger.log("Computing Consumption Data")
     
     # Define the aggregation logic once to be reused.
     consumption_agg_dict = {
@@ -357,7 +358,7 @@ def _compute_consumption_quartiles(df: pd.DataFrame, intervals_per_day: int) -> 
 @st.cache_data(ttl=3600)
 def _compute_example_day(df: pd.DataFrame, random_day, group: bool = False) -> pd.DataFrame:
     """Selects a random day and return the data for plotting as well as the DataFrame itself."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Example Day")
+    logger.log("Computing Example Day")
 
     df_hour = df[df["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.date == random_day].copy()
     
@@ -458,7 +459,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
 @st.cache_data(ttl=3600)
 def _compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
     """Computes and caches the yearly summary of the data."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Yearly Summary")
+    logger.log("Computing Yearly Summary")
     df["Year"] = df["timestamp"].dt.year
     yearly_summary_agg_dict = {
         "Total Consumption": ("consumption_kwh", "sum"),
@@ -494,7 +495,7 @@ def render_yearly_summary_tab(df: pd.DataFrame):
 @st.cache_data(ttl=3600)
 def _compute_download_data(df: pd.DataFrame) -> tuple[bytes, bytes]:
     """Prepares and caches the Excel file bytes for download."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Computing Download Data")
+    logger.log("Computing Download Data")
     
     # Prepare data for spot price-only download (hourly resolution)
     excel_spot_data_df = df.set_index("timestamp").resample("h").first().reset_index()[["timestamp", "spot_price_eur_kwh"]].dropna()

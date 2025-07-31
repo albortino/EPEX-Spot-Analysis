@@ -1,11 +1,11 @@
 import streamlit as st
-from datetime import datetime
 import methods.config as config
 import methods.data_loader as data_loader
 import methods.analysis as analysis
 import methods.ui_components as ui_components
 from methods.tariffs import TariffManager
 from methods.config import AWATTAR_COUNTRY
+from methods.logger import logger
 
 # --- Page and App Configuration ---
 st.set_page_config(layout="wide")
@@ -46,7 +46,7 @@ def main():
         return
     
     # --- Core Analysis Pipeline ---
-    print(f"{datetime.now().strftime(config.DATE_FORMAT)}: Performing Full Analysis")
+    logger.log("Performing Full Analysis", )
     df_classified, base_threshold, peak_threshold = analysis.classify_usage(df_merged, config.LOCAL_TIMEZONE)
     df_with_shifting = analysis.simulate_peak_shifting(df_classified, shift_percentage)
     df_analysis = tariff_manager.run_cost_analysis(df_with_shifting, flex_tariff, static_tariff)

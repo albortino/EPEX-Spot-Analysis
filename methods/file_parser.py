@@ -8,6 +8,7 @@ from typing import List, Optional
 from dataclasses import dataclass, asdict
 from methods.config import LOCAL_TIMEZONE, CACHE_FOLDER
 from methods.utils import get_intervals_per_day
+from methods.logger import logger
 
 @dataclass
 class ProviderFormat:
@@ -58,7 +59,7 @@ class JavaScriptNetzbetreiberParser:
                 if provider:
                     providers.append(provider)
             except Exception as e:
-                print(f"Error parsing {var_name}: {e}")
+                logger.log(f"Error parsing JavaScript provider config for '{var_name}': {e}", severity=1)
                 continue
         
         return providers
@@ -252,25 +253,25 @@ class ConsumptionDataParser:
             # Direct content parsing, no caching involved.
             try:
                 main_formats = self._load_from_js_content(js_content)
-            except Exception as e:
-                print(f"Failed to parse from content': {e}")
+            except ValueError as e:
+                logger.log(f"Failed to parse provider config from direct content: {e}", severity=1)
         elif js_url:
             try:
                 response = requests.get(js_url)
                 response.raise_for_status()
                 main_formats = self._load_from_js_content(response.text)
                 self._save_to_cache(main_formats)
-            except Exception as e:
-                print(f"Failed to fetch or parse from URL '{js_url}': {e}")
+            except (requests.RequestException, ValueError) as e:
+                logger.log(f"Failed to fetch or parse from URL '{js_url}': {e}", severity=1)
 
         # If main_formats is still empty (JS fetch failed or was not attempted)
         if not main_formats:
-            print("Attempting to load main provider configurations from cache...")
+            logger.log("Attempting to load main provider configurations from cache...")
             main_formats = self._load_from_cache()
 
         # Combine lists. User formats are first in the list.
         self.provider_formats = user_formats + main_formats
-        print(f"Total of {len(self.provider_formats)} provider formats loaded ({len(user_formats)} user-defined, {len(main_formats)} main).")
+        logger.log(f"Total of {len(self.provider_formats)} provider formats loaded ({len(user_formats)} user-defined, {len(main_formats)} main).")
 
     def _load_user_defined_formats(self) -> List[ProviderFormat]:
         """Loads user-defined provider formats from own_provider_formats.json."""
@@ -279,13 +280,13 @@ class ConsumptionDataParser:
                 formats_from_json = json.load(f)
             
             user_formats = [ProviderFormat(**item) for item in formats_from_json]
-            print(f"Loaded {len(user_formats)} user-defined provider configurations from {self.user_formats_file}.")
+            logger.log(f"Loaded {len(user_formats)} user-defined provider configurations from {self.user_formats_file}.", severity=1)
             return user_formats
         except FileNotFoundError:
             # This is not an error, the user might not have a custom file.
             return []
         except Exception as e:
-            print(f"Error loading user-defined provider configurations from {self.user_formats_file}: {e}")
+            logger.log(f"Error loading user-defined provider configurations from {self.user_formats_file}: {e}", severity=1)
             return []
 
     def _save_to_cache(self, formats: List[ProviderFormat]):
@@ -301,9 +302,9 @@ class ConsumptionDataParser:
             
             with open(self.cache_file, 'w', encoding='utf-8') as f:
                 json.dump(formats_as_dict, f, indent=4, ensure_ascii=False)
-            print(f"Saved {len(formats)} provider configurations to cache at {self.cache_file}")
+            logger.log(f"Saved {len(formats)} provider configurations to cache at {self.cache_file}", severity=1)
         except Exception as e:
-            print(f"Error saving provider configurations to cache: {e}")
+            logger.log(f"Error saving provider configurations to cache: {e}", severity=1)
 
     def _load_from_cache(self) -> List[ProviderFormat]:
         """Loads provider_formats from the JSON cache file. Returns a list of formats."""
@@ -312,12 +313,12 @@ class ConsumptionDataParser:
                 formats_from_json = json.load(f)
             
             formats = [ProviderFormat(**item) for item in formats_from_json]
-            print(f"Loaded {len(formats)} provider configurations from cache.")
+            logger.log(f"Loaded {len(formats)} provider configurations from cache.", severity=1)
             return formats
         except FileNotFoundError:
             return [] # Expected case, not an error
         except Exception as e:
-            print(f"Error loading provider configurations from cache: {e}")
+            logger.log(f"Error loading provider configurations from cache: {e}", severity=1)
             return []
 
     def _load_from_js_content(self, js_content: str) -> List[ProviderFormat]:
@@ -329,7 +330,7 @@ class ConsumptionDataParser:
             if not parsed_formats:
                 raise ValueError("No provider formats found in JavaScript content.")
             
-            print(f"Loaded {len(parsed_formats)} provider configurations from JavaScript.")
+            logger.log(f"Loaded {len(parsed_formats)} provider configurations from JavaScript.", severity=1)
             return parsed_formats
         except Exception as e:
             raise ValueError(f"Error parsing JavaScript content: {e}") from e
@@ -349,20 +350,21 @@ class ConsumptionDataParser:
                 if isinstance(file_content, bytes):
                     file_content = file_content.decode('utf-8-sig')
         except Exception as e:
-            print(f"Error reading file: {e}")
+            logger.log(f"Error reading uploaded file: {e}", severity=1)
             return pd.DataFrame()
 
         for provider_format in self.provider_formats:
             try:
                 df = self._try_parse(io.StringIO(file_content), provider_format)
                 if not df.empty:
-                    print(f"Successfully parsed with format: {provider_format.name}")
+                    logger.log(f"Successfully parsed with format: {provider_format.name}", severity=1)
                     return self._standardize_dataframe(df)
             except Exception as e:
-                print(e)
+                # This is expected if a format doesn't match, so no log needed unless debugging.
+                # logger.log(f"Attempted format '{provider_format.name}' and failed: {e}")
                 continue
         
-        print("No suitable parser found for the uploaded file.")
+        logger.log("No suitable parser found for the uploaded file.", severity=1)
         return pd.DataFrame()
 
     def _try_parse(self, file_content_io: io.StringIO, config: ProviderFormat) -> pd.DataFrame:
@@ -545,6 +547,6 @@ if __name__ == "__main__":
     # Create parser with default configurations
     parser = ConsumptionDataParser()
     
-    print("Available provider formats:")
+    logger.log("Available provider formats:")
     for fmt in parser.provider_formats:
-        print(f"- {fmt.name}")
+        logger.log(f"- {fmt.name}")

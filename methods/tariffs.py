@@ -3,6 +3,7 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Dict
+from methods.logger import logger
 
 class TariffType(Enum):
     """Enum to represent the type of tariff."""
@@ -47,11 +48,11 @@ class TariffManager:
                 ]
                 
         except FileNotFoundError:
-            print(f"Error: Tariff file not found at {file_path}")
+            logger.log(f"Tariff file not found at {file_path}", severity=1)
             return []
         
         except json.JSONDecodeError:
-            print(f"Error: Could not decode JSON from {file_path}")
+            logger.log(f"Could not decode JSON from {file_path}", severity=1)
             return []
 
     def get_flex_tariffs_with_custom(self) -> Dict[str, Tariff]:

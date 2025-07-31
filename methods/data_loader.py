@@ -3,8 +3,9 @@ import streamlit as st
 import requests
 import os
 from datetime import datetime, date
-from methods.config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, DATE_FORMAT, CACHE_FOLDER
+from methods.config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, CACHE_FOLDER
 from methods.file_parser import ConsumptionDataParser
+from methods.logger import logger
 
 # --- Spot Price Data Handling ---
 
@@ -26,7 +27,7 @@ def _fetch_spot_data(country: str, start: date, end: date, cache_filename: str) 
     params = {"start": int(start_dt.timestamp() * 1000), "end": int(end_dt.timestamp() * 1000)}
     
     try:
-        print(f"{datetime.now().strftime(DATE_FORMAT)}: Will fetch data from Awattar.")
+        logger.log("Fetching spot price data from aWATTar API.", severity=1)
         response = requests.get(base_url, params=params)
         response.raise_for_status()
         data = response.json().get("data")
@@ -58,17 +59,16 @@ def get_spot_data(country: str, start: date, end: date) -> pd.DataFrame:
     country_cache_filename = f"{country}_{SPOT_PRICE_CACHE_FILE}"
     cache_path = os.path.join(CACHE_FOLDER, country_cache_filename)
     
-    now = datetime.now().strftime(DATE_FORMAT)
     if os.path.exists(cache_path):
         df_cache = _load_from_cache(cache_path)
         if not df_cache.empty:
             min_cached = df_cache["timestamp"].min().date()
             max_cached = df_cache["timestamp"].max().date()
             if min_cached <= start and max_cached >= end:
-                print(f"{now}: Loading spot prices from cache.")
+                logger.log("Loading spot prices from cache.", severity=1)
                 return df_cache[(df_cache["timestamp"].dt.date >= start) & (df_cache["timestamp"].dt.date <= end)]
     
-    print(f"{now}: Cache insufficient or missing. Will fetch data from aWATTar.")
+    logger.log("Cache insufficient or missing. Fetching new data from aWATTar.", severity=1)
     return _fetch_spot_data(country, start, end, cache_path)
 
 # --- Consumption Data Handling ---
@@ -93,7 +93,7 @@ def process_consumption_data(uploaded_file, aggregation_level: str = "h") -> pd.
 @st.cache_data(ttl=3600)
 def merge_consumption_with_prices(df_consumption: pd.DataFrame, df_spot_prices: pd.DataFrame) -> pd.DataFrame:
     """Merges consumption data with spot prices, aligning timestamps."""
-    print(f"{datetime.now().strftime(DATE_FORMAT)}: Merging Consumption with Prices")
+    logger.log("Merging consumption data with spot prices.")
     if df_consumption.empty or df_spot_prices.empty:
         return pd.DataFrame()
 
