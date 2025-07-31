@@ -1,55 +1,79 @@
-# Strompreis Analyse
+# Electricity Tariff Comparison Dashboard
 
-This project is designed to analyze electricity prices, providing insights and tools for understanding energy costs.
-## Project Overview
+This Streamlit application provides a comprehensive tool for analyzing your electricity consumption, comparing different tariff options (flexible vs. static), simulating the impact of peak load shifting, and gaining insights into your energy usage patterns.
 
-This project provides a comprehensive analysis of electricity prices, focusing on the Austrian and German market and offering tools for understanding and optimizing energy costs. It includes functionalities for backtesting electricity tariffs, particularly those offered by dynamic pricing providers like aWATTar.
+## Description
 
-## EPEX Spot Backtesting
+The dashboard allows users to upload their historical electricity consumption data (typically in CSV format) and compare the cost-effectiveness of various electricity tariffs. It fetches real-time EPEX spot prices for a selected country and overlays them with your consumption data. Key features include identifying the cheapest available tariffs, simulating savings through peak load shifting, and visualizing detailed consumption breakdowns and price trends.
 
-One of the core features of this project is the ability to backtest electricity tariffs, especially those with dynamic pricing components. This allows users to simulate their historical electricity costs under different tariff structures.
+## Key Features
 
-To utilize this feature:
+*   **Consumption Data Upload:** Easily upload your historical electricity consumption data via a CSV file. The application supports parsing common formats for providers and can be extended for others.
+*   **Dynamic Tariff Comparison:**
+    *   **Automatic Cheapest Tariff Detection:** Automatically identifies the most economical predefined flexible and static tariffs based on your uploaded consumption data.
+    *   **Custom Tariff Configuration:** Allows users to define their own flexible and static tariffs by specifying on-top prices, variable percentages, and monthly fees.
+*   **Peak Load Shifting Simulation:** Simulate the potential cost savings achievable by shifting a configurable percentage of your peak electricity consumption to off-peak hours within a flexible time window.
+*   **Interactive Analysis Tabs:**
+    *   **Spot Price Analysis:**
+        *   Visualize the distribution of EPEX spot prices over time (hourly, weekly, or monthly).
+        *   Analyze average spot prices through an interactive heatmap showing daily and seasonal patterns.
+    *   **Cost Comparison:**
+        *   Compare total electricity costs and the effective price per kWh for different tariffs over daily, weekly, or monthly periods.
+        *   Review a detailed table summarizing consumption, costs, and savings.
+    *   **Usage Pattern Analysis:**
+        *   Classify your hourly consumption into `Base Load`, `Regular Load`, and `Peak Load` based on dynamic thresholds.
+        *   Understand the contribution of each load type to your total consumption and their associated average prices.
+        *   Visualize consumption patterns with a daily breakdown for a selected example day.
+    *   **Yearly Summary:** Provides an aggregated overview of total consumption and costs for each year present in your data.
+    *   **Download Data:** Export the detailed analysis results and raw EPEX spot price data in XLSX format for further offline analysis.
+*   **Intelligent Recommendations:** Receive data-driven recommendations on which tariff type (flexible or static) is likely to be more cost-effective for your usage profile, along with optimization tips.
+*   **Absence Day Handling:** Option to exclude days with unusually low consumption, improving the accuracy of baseline analysis and recommendations.
 
-1.  **Upload Consumption Data:** You will need to upload your historical electricity consumption data. This data is typically available from your energy network provider. If you have questions about the required format or where to obtain this data, please refer to the `https://awattar-backtesting.github.io` documentation.
+## How to Use
 
-2.  **Configure Tariffs:**
-    *   **Pre-selected Configuration:** The application provides pre-selected tariff configurations on the left sidebar. These configurations are based on an analysis of common tariffs (e.g., those found on Ecotricity) as of mid-July 2025. Please be aware that these tariffs are subject to change.
-    *   **Custom Configuration:** For individual tariffs or specific scenarios, you can adapt the values in the configuration section to match your unique tariff structure.
-
-## Tab Views
-
-The application is organized into five distinct tab views, each serving a specific purpose:
-
-*   **Spot Price Analysis:** This tab focuses on analyzing historical electricity spot prices, providing insights into price trends and volatility.
-*   **Cost Comparison:** Here, you can compare the costs of different electricity tariffs based on your consumption data.
-*   **Usage Pattern Analysis:** This section visualizes your electricity consumption patterns, helping you understand when and how you use energy.
-*   **Yearly Summary:** Provides an annual overview of your electricity costs and consumption.
-*   **Download Data:** Allows you to download processed data and analysis results.
-## About the Author
-
-This project is developed by **Alborino** (GitHub: [alborino](https://github.com/alborino)).
-
-## Environment Installation
-
-To ensure reproducibility and ease of setup, this project uses a Conda environment.
-
-### Getting the Conda Environment
-
-To set up the project's environment on your machine, you can use the `environment.yml` file.
-
-1.  **Create the environment:**
-
+1.  **Clone the Repository:**
+    ```bash
+    git clone <repository_url>
+    cd your-repository-directory
+    ```
+2.  **Install Dependencies:**
+    Ensure you have Python and Conda (Anaconda or Miniconda) installed. Then, install the required libraries:
     ```bash
     conda env create -f environment.yml
     ```
-
-    This command will create a new Conda environment with the name specified in the `environment.yml` file (usually `strompreis-analyse` or similar).
-
-2.  **Activate the environment:**
-
+3.  **Run the Application:**
+    Launch the Streamlit application from your terminal:
     ```bash
-    conda activate strompreis-analyse # Replace 'strompreis-analyse' with your environment name if different
+    streamlit run app.py
     ```
+4.  **Upload Consumption Data:**
+    In the sidebar of the application, use the "Upload Your Consumption CSV" button to upload your electricity usage data. For best results, ensure your data is in hourly or 15-minute intervals.
+5.  **Configure Settings:**
+    *   **Country:** Select the country for which EPEX spot prices should be fetched (e.g., Germany, Austria).
+    *   **Analysis Period:** Define the start and end dates for your analysis.
+    *   **Tariff Plans:** Choose to automatically compare the cheapest predefined tariffs or manually configure your own flexible and static tariff details.
+    *   **Peak Load Shifting:** Adjust the slider to simulate shifting a percentage of your peak consumption.
+6.  **Explore Insights:**
+    Navigate through the different tabs ("Spot Price Analysis", "Cost Comparison", "Usage Pattern Analysis", "Yearly Summary", "Download Data") to view detailed charts, tables, and recommendations.
 
-    Once activated, you can run the project's scripts and notebooks within this isolated environment.
+## Data Requirements
+
+*   **Consumption Data:** A CSV file containing your electricity consumption. Key columns expected are a timestamp and a consumption value (e.g., `consumption_kwh`). The application is designed to be flexible with data granularity, but 15-minute intervals provide richer insights for usage pattern analysis. In case of any uncertainties please refer to the documentation in [awattar backtesting](https://awattar-backtesting.github.io/).
+*   **Spot Prices:** The application automatically fetches hourly EPEX spot prices from the aWATTar API for the selected country and date range. These prices are cached locally to optimize performance.
+
+## File Structure Overview
+
+*   `app.py`: The main script orchestrating the Streamlit application flow, loading modules, and rendering the UI.
+*   `methods/`: Contains all supporting Python modules.
+    *   `config.py`: Stores application-wide constants, configurations, and API-related settings.
+    *   `data_loader.py`: Manages fetching EPEX spot prices from the aWATTar API and processing user-uploaded consumption data. Includes caching mechanisms.
+    *   `analysis.py`: Implements the core analytical logic, including consumption classification (base, peak, regular) and peak load shifting simulation.
+    *   `ui_components.py`: Handles the creation and rendering of all user interface elements, including sidebars, tabs, charts, and user inputs.
+    *   `tariffs.py`: Defines the `Tariff` class and `TariffManager` for managing and calculating costs associated with different tariff structures.
+    *   `utils.py`: Contains general utility functions used across the application (e.g., date handling, file export).
+    *   `file_parser.py`: Houses the `ConsumptionDataParser` class responsible for parsing various CSV formats of consumption data.
+    *   `charts.py`: Provides custom functions for generating specific plot types used in the dashboard.
+
+## Acknowledgements
+
+This project was influenced by and extends the functionality presented in the [awattar backtesting](https://awattar-backtesting.github.io/) project, providing a more detailed and user-friendly interface for electricity tariff analysis.
