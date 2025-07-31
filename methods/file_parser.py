@@ -1,6 +1,6 @@
 import pandas as pd
 import io
-from methods import get_intervals_per_day
+from methods.utils import get_intervals_per_day
 
 class ConsumptionDataParser:
     """
