@@ -137,3 +137,45 @@ def get_marimekko_chart(df: pd.DataFrame, border_color: str = "#FFFFFF") -> go.F
             )
 
     return fig
+
+
+def get_trend_chart(df_daily_trend: pd.DataFrame, df_forecast: pd.DataFrame) -> go.Figure:
+    """Creates a line chart showing daily consumption, its trend, and a forecast."""
+    
+    fig = go.Figure()
+
+    # Add historical daily consumption
+    fig.add_trace(go.Scatter(
+        x=df_daily_trend['timestamp'], 
+        y=df_daily_trend['consumption_kwh'],
+        mode='lines',
+        name='Daily Consumption',
+        line=dict(color='#1f77b4', width=1.5),
+        opacity=0.7
+    ))
+
+    # Add the calculated trendline
+    fig.add_trace(go.Scatter(
+        x=df_daily_trend['timestamp'],
+        y=df_daily_trend['trend'],
+        mode='lines',
+        name='Trendline',
+        line=dict(color='#ff7f0e', width=3)
+    ))
+    
+    # Add the forecast line
+    fig.add_trace(go.Scatter(
+        x=df_forecast['timestamp'],
+        y=df_forecast['forecast'],
+        mode='lines',
+        name='Forecast',
+        line=dict(color='#d62728', width=3, dash='dash')
+    ))
+
+    fig.update_layout(
+        xaxis_title="Date",
+        yaxis_title="Consumption (kWh)",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    
+    return fig

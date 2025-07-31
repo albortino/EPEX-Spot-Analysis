@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import random
 from datetime import date
+import numpy as np
 
 from methods.config import *
 from methods.tariffs import Tariff, TariffManager
@@ -255,8 +256,31 @@ def _compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataF
     df_summary["Period"] = df_summary["timestamp"].dt.strftime("%Y-%m-%d" if resolution == "Daily" else "%Y-%U" if resolution == "Weekly" else "%Y-%m")
     return df_summary
 
+def _compute_col_vals(df: pd.DataFrame, is_granular_data: bool, func, func_name: str) -> pd.DataFrame:
+    """Computes aggregated column values using the provided function. """
+    result = {"Period": func_name}
+    
+    # Always include Total Consumption
+    result["Total Consumption"] = func(df["Total Consumption"])
+
+    # Add conditional columns based on data granularity
+    if is_granular_data:
+        result["Total Flexible Cost"] = func(df["Total Flexible Cost"])
+        result["Total Static Cost"] = func(df["Total Static Cost"])
+        result["Difference (€)"] = func(df["Difference (€)"])
+    else:
+        result["Total Static Cost"] = func(df["Total Static Cost"])
+    
+    return pd.DataFrame([result])
+
+
 def render_cost_comparison_tab(df: pd.DataFrame):
     """Renders the content for the 'Cost Comparison' tab."""
+    
+    # Lambda function to format the difference for all tables
+    difference_formatter = lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}"
+    granular_col_format = {"Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"}
+    regular_col_format = {"Total Consumption": "{:,.2f} kWh", "Total Static Cost": "€{:,.2f}"}
 
     logger.log("Rendering Cost Comparison Tab")
 
@@ -295,17 +319,38 @@ def render_cost_comparison_tab(df: pd.DataFrame):
             
     st.subheader("Detailed Comparison Table")
     st.text("Review the costs and savings for each period.", help="Note: For Austria, this table does not include 'Strompreisbremse' in the years before 2025, nor 'Energieabgabe' or network fees!")
+    
+    # Main DataFrame
     if is_granular_data:
         cols_to_show = ["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]
         styler = df_summary[cols_to_show].style
-        styler = styler.map(lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}", subset=["Difference (€)"]) #type: ignore
-        styler = styler.format({"Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"})
+        styler = styler.map(difference_formatter, subset=["Difference (€)"]) #type: ignore
+        styler = styler.format(granular_col_format)
     else:
         cols_to_show = ["Period", "Total Consumption", "Total Static Cost"]
         styler = df_summary[cols_to_show].style
-        styler = styler.format({"Total Consumption": "{:.2f} kWh", "Total Static Cost": "€{:.2f}"})
+        styler = styler.format(regular_col_format)
         
     st.dataframe(styler, hide_index=True, use_container_width=True)
+
+    # Calculate totals
+    df_totals = _compute_col_vals(df_summary, is_granular_data, sum, "Total")
+    df_means = _compute_col_vals(df_summary, is_granular_data, lambda x: x.mean(), "Average")
+    df_display = pd.concat([df_totals, df_means], ignore_index=True)
+
+    # Style the totals DataFrame
+    if is_granular_data:
+        totals_styler = df_display[cols_to_show].style
+        totals_styler = totals_styler.map(difference_formatter, subset=["Difference (€)"]) #type: ignore
+        totals_styler = totals_styler.format(granular_col_format)
+    else:
+        totals_styler = df_display[cols_to_show].style
+        totals_styler = totals_styler.format(regular_col_format)
+    
+    # Convert to HTML and render without header
+    totals_html = totals_styler.hide(axis="index")
+    st.text("Total and average values for all periods.")
+    st.dataframe(totals_html, hide_index=True, use_container_width=True)
 
 # --- Tab: Usage Pattern Analysis ---
 
@@ -393,6 +438,63 @@ def _compute_example_day(df: pd.DataFrame, random_day, group: bool = False) -> p
         return df_hour
     else:
         return pd.DataFrame()
+    
+@st.cache_data(ttl=3600)
+def _compute_consumption_trend_and_forecast(df: pd.DataFrame):
+    """
+    Analyzes the daily consumption trend using linear regression and forecasts the next 90 days.
+    Caches the result for performance.
+    """
+    logger.log("Computing Consumption Trend and Forecast")
+    
+    # Resample to daily consumption data to get a clearer trend
+    if 'timestamp' not in df.columns:
+        return None
+    df_daily = df.resample('D', on='timestamp')['consumption_kwh'].sum().reset_index()
+    df_daily = df_daily[df_daily['consumption_kwh'] > 0.01]  # Remove days with no or negligible consumption
+    
+    # We need at least 30 days of data for a meaningful trend analysis
+    if len(df_daily) < 30:
+        return None
+        
+    # Convert dates to numerical values for regression
+    df_daily['time_ordinal'] = df_daily['timestamp'].apply(lambda x: x.toordinal())
+    
+    # --- Trend Calculation using Linear Regression ---
+    slope, intercept = np.polyfit(df_daily['time_ordinal'], df_daily['consumption_kwh'], 1)
+    df_daily['trend'] = slope * df_daily['time_ordinal'] + intercept
+    df_daily['trend'] = df_daily['trend'].clip(0)  # Consumption cannot be negative
+
+    # --- Forecast Calculation for the next 90 days ---
+    forecast_days = 90
+    last_date = df_daily['timestamp'].max()
+    future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=forecast_days)
+    future_ordinals = np.array([d.toordinal() for d in future_dates])
+    
+    forecast_values = (slope * future_ordinals + intercept).clip(0)
+    df_forecast = pd.DataFrame({'timestamp': future_dates, 'forecast': forecast_values})
+    
+    # --- Trend Analysis for Summary Text ---
+    start_trend = df_daily['trend'].iloc[0]
+    end_trend = df_daily['trend'].iloc[-1]
+    
+    # Calculate percentage change relative to the average consumption to get a stable metric
+    avg_consumption = df_daily['consumption_kwh'].mean()
+    if avg_consumption > 0:
+        total_change_over_period = end_trend - start_trend
+        percent_change = (total_change_over_period / avg_consumption) * 100
+    else:
+        percent_change = 0
+
+    # Classify the trend
+    if abs(percent_change) < 5:
+        trend_description = "Stable"
+    elif percent_change > 0:
+        trend_description = "Increasing"
+    else:
+        trend_description = "Decreasing"
+        
+    return df_daily, df_forecast, trend_description, percent_change
 
 
 def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_threshold: float):
@@ -415,13 +517,44 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
     df_consumption_day = _compute_consumption_quartiles(df_filtered, intervals)
     
     st.subheader("Consumption Over Time")
-    st.markdown(
+    st.markdown("#### Daily Consumption\n"
         "This chart illustrates the statistical distribution of your consumption for the selected time resolution. "
         "The solid line represents the **median (50th percentile)** consumption, while the dotted lines show the first and third Quartile."
     )
 
     consumption_fig = charts.get_consumption_chart(df_consumption_day)
     st.plotly_chart(consumption_fig, use_container_width=True)
+    
+    try:
+        trend_data = _compute_consumption_trend_and_forecast(df_filtered)
+
+        markdown_text = """#### Consumption Trend & Forecast\n"
+            "The chart below analyzes the trend in your daily consumption over the selected period using a simple linear regression. "
+            "It also provides a forecast for the next 3 months to give you an idea of where your usage might be heading."""
+
+        if trend_data:
+            df_daily_trend, df_forecast, trend_description, trend_metric = trend_data
+
+            # Create and display the trend chart
+            st.markdown(markdown_text)
+            
+            # Display trend metric as a summary
+            st.metric(
+                label="Consumption Trend", 
+                value=trend_description, 
+                delta=f"{trend_metric:.1f}% change over period",
+                delta_color=("inverse" if trend_metric < 0 else "normal")
+            )
+
+            trend_fig = charts.get_trend_chart(df_daily_trend, df_forecast)
+            st.plotly_chart(trend_fig, use_container_width=True)
+        else:
+            st.markdown(markdown_text)
+            st.info("A meaningful consumption trend could not be calculated. This usually requires at least 30 days of data.")
+            
+    except (KeyError, ValueError) as e:
+        logger.log(f"{e}", severity=1)
+        
     
     # Only show the detailed analysis when consumption data includes 15 minutes intervals.
     if intervals <= 24: # Hourly data or less
