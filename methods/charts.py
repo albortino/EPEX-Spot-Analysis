@@ -2,7 +2,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
 from methods.config import FLEX_COLOR, MEKKO_BORDER, FLEX_COLOR_LIGHT, STATIC_COLOR, FLEX_COLOR_SHADE
-import streamlit as st
+import calendar
 
 def get_price_chart(df: pd.DataFrame, static_price: pd.Series) -> go.Figure:
     fig = go.Figure()
@@ -27,7 +27,22 @@ def get_price_chart(df: pd.DataFrame, static_price: pd.Series) -> go.Figure:
 
 
 def get_heatmap(df: pd.DataFrame) -> go.Figure:
-    fig = px.imshow(df, labels=dict(x="Hour of Day", y="Month", color="Avg Spot Price (€/kWh)"), aspect="auto", color_continuous_scale="Viridis")
+    fig = px.imshow(
+        df,
+        labels=dict(x="Hour of Day", y="Month", color="Avg Spot Price (€/kWh)"),
+        aspect="auto",
+        color_continuous_scale="Viridis"
+    )
+    
+    # Assume df.index contains month numbers in appearance order
+    month_numbers = df.index.tolist()
+    month_names = [calendar.month_name[m] for m in month_numbers]
+
+    fig.update_yaxes(
+        tickvals=list(range(len(month_numbers))),
+        ticktext=month_names
+    )
+
     return fig
 
 def get_consumption_chart(df: pd.DataFrame) -> go.Figure:

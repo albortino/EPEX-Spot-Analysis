@@ -56,7 +56,7 @@ def _compare_all_tariffs(df_consumption: pd.DataFrame, _tariff_manager: TariffMa
     
     return final_flex_tariff, final_static_tariff
 
-def _return_tariff_selection(_tariff_manager: TariffManager) -> tuple[Tariff, Tariff]:
+def _return_tariff_selection(_tariff_manager: TariffManager, expanded: bool = True) -> tuple[Tariff, Tariff]:
     """Renders tariff selection expanders in the UI for user customization."""
     logger.log("Rendering Tariff Selection")
     
@@ -67,7 +67,7 @@ def _return_tariff_selection(_tariff_manager: TariffManager) -> tuple[Tariff, Ta
     ]
 
     for title, tariff_options in options:
-        with st.expander(title, expanded=True):
+        with st.expander(title, expanded=expanded):
             tariff_type = title.split(" ")[0]
             # Let user select a predefined tariff or 'Custom'
             selected_name = st.selectbox(f"Select {tariff_type} Tariff", options=list(tariff_options.keys()), index=len(tariff_options) - 1)
@@ -96,35 +96,39 @@ def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager) -> tu
         # 1. Country Selection for EPEX
         country_select = {"Austria": "at", "Germany": "de"}
         
-        st.subheader("1. Country")
-        selected_country = st.selectbox(label="Select country for EPEX spot prices.", options=country_select.keys(), index=0)
-        awattar_country = country_select[selected_country]
+        with st.expander("Select Country", expanded=False):
+            selected_country = st.selectbox(label="Select country for EPEX spot prices.", options=country_select.keys(), index=0)
+            awattar_country = country_select[selected_country]
         
         # 2. Analysis Period Selection
-        st.subheader("2. Analysis Period")
-        min_date, max_date = get_min_max_date(df)
-        col1, col2 = st.columns(2)
-        start_date = col1.date_input("Start Date", min_date, min_value=min_date, max_value=max_date, format="DD.MM.YYYY")
-        end_date = col2.date_input("End Date", max_date, min_value=min_date, max_value=max_date, format="DD.MM.YYYY")
+        with st.expander("Select Analysis Period", expanded=True):
+            min_date, max_date = get_min_max_date(df)
+            selected_range = st.date_input("Choose a start and end date.", value=(min_date, max_date),min_value=min_date, max_value=max_date,format="DD.MM.YYYY", label_visibility="hidden")
+
+        # Split into start and end dates
+        if isinstance(selected_range, tuple) and len(selected_range) == 2:
+            start_date, end_date = selected_range
+        else:
+            start_date, end_date = selected_range[0], max_date
         
         # 3. Tariff Plan Selection
-        st.subheader("3. Tariff Plans")
-        st.text("Choose a tariff or adjust parameters for a custom comparison.")
-        
-        compare_cheapest = st.checkbox("Compare cheapest tariffs", value=False, help="Automatically selects the most economical predefined tariffs based on your data.")
-        if compare_cheapest:
-            final_flex_tariff, final_static_tariff = _compare_all_tariffs(df, tariff_manager, awattar_country)
-            flex_info = f"Cheapest Flex Tariff:\n\n**{final_flex_tariff.name}**" if final_flex_tariff else "No flexible tariff found."
-            static_info = f"Cheapest Static Tariff:\n\n**{final_static_tariff.name}**" if final_static_tariff else "No static tariff found."
-            st.info(f"{flex_info}\n\n{static_info}")
+        with st.expander("Select Tariff Plan", expanded=True):
+            st.text("Choose a tariff or adjust parameters for a custom comparison.")
+            
+            compare_cheapest = st.checkbox("Compare cheapest tariffs", value=False, help="Automatically selects the most economical predefined tariffs based on your data.")
+            if compare_cheapest:
+                final_flex_tariff, final_static_tariff = _compare_all_tariffs(df, tariff_manager, awattar_country)
+                flex_info = f"Cheapest Flex Tariff:\n\n**{final_flex_tariff.name}**" if final_flex_tariff else "No flexible tariff found."
+                static_info = f"Cheapest Static Tariff:\n\n**{final_static_tariff.name}**" if final_static_tariff else "No static tariff found."
+                st.info(f"{flex_info}\n\n{static_info}")
 
-        else:
-            final_flex_tariff, final_static_tariff = _return_tariff_selection(tariff_manager)
+            else:
+                final_flex_tariff, final_static_tariff = _return_tariff_selection(tariff_manager, expanded=False)
             
         # 4. Load Shifting Simulation
-        st.subheader("4. Cost Simulation")
-        st.markdown("Simulate shifting a percentage of your peak consumption to a cheaper hour within a +/- 2-hour window.", help="This shows the potential savings if you can be flexible with high-power activities like EV charging, dish washer, washing machine or running a heat pump.")
-        shift_percentage = st.slider("Shift Peak Load (%)", min_value=0, max_value=100, value=0, step=5)
+        with st.expander("Simulate Consumption Shifting", expanded=False):
+            st.markdown("Simulate shifting a percentage of your peak consumption to a cheaper hour within a +/- 2-hour window.", help="This shows the potential savings if you can be flexible with high-power activities like EV charging, dish washer, washing machine or running a heat pump.")
+            shift_percentage = st.slider("Shift Peak Load (%)", min_value=0, max_value=100, value=0, step=5)
 
         return awattar_country, start_date, end_date, final_flex_tariff, final_static_tariff, shift_percentage
 
@@ -147,10 +151,12 @@ def render_absence_days(df: pd.DataFrame, base_threshold: float) -> pd.DataFrame
     with st.sidebar:
         absence_days = _compute_absence_data(df, base_threshold, ABSENCE_THRESHOLD)
         if absence_days:
-            st.subheader("5. Absence Handling", help=f"Remove days with consumption below {ABSENCE_THRESHOLD:.0%} of the typical base load. This can provide a more accurate analysis of your normal usage.")
-            select_all = st.checkbox(f"Exclude all {len(absence_days)} detected absence days", value=False)
-            default_selection = absence_days if select_all else []
-            excluded_days = st.multiselect("Select specific days to exclude:", options=absence_days, default=default_selection)
+            with st.expander("Remove Days of Absence", expanded=False):
+                st.text(f"Exclude all {len(absence_days)} detected days of absence with low consumption.", help=f"Remove days with consumption below {ABSENCE_THRESHOLD:.0%} of the typical base load. This can provide a more accurate analysis of your normal usage.")
+                select_all = st.checkbox(f"Exclude all days", value=False)
+                default_selection = absence_days if select_all else []
+                excluded_days = st.multiselect("Select specific days to exclude:", options=absence_days, default=default_selection)
+                
             if excluded_days:
                 # Filter out the selected absence days
                 return df[~df["date"].isin(excluded_days)]
@@ -163,7 +169,7 @@ def render_recommendation(df: pd.DataFrame):
 
     is_granular_data = calculate_granular_data(df)
     if not is_granular_data:
-        st.warning(f"⚠️ Static Plan Recommended: A flexible plan is only recommended for hourly or 15-minute data.")
+        st.warning(f"⚠️ Recommendations are only available for hourly or 15-minute data!")
         return
 
     savings = df["total_cost_static"].sum() - df["total_cost_flexible"].sum()
@@ -275,14 +281,16 @@ def render_cost_comparison_tab(df: pd.DataFrame):
         st.line_chart(df_summary.set_index("Period"), y=y_cols_total, y_label="Total Cost (€)", color=colors_total)
 
     with col2:
+        # Learning: dots, € signs etc. in column names lead to errors
         st.subheader("Average Price per kWh")
         st.markdown("See the effective price per kWh after accounting for both variable costs and fixed fees.")
-        df_summary["Avg. Static Price (€/kWh)"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
-        if is_granular_data:
-            df_summary["Avg. Flexible Price (€/kWh)"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
+        df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
         
-        y_cols_avg = ["Avg. Flexible Price (€/kWh)", "Avg. Static Price (€/kWh)"] if is_granular_data else ["Avg. Static Price (€/kWh)"]
-        colors_avg = [FLEX_COLOR, STATIC_COLOR] if is_granular_data else [STATIC_COLOR]
+        if is_granular_data:
+            df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
+        
+        y_cols_avg = ["Avg Static Price", "Avg. Flexible Price"] if is_granular_data else ["Avg Static Price"]
+        colors_avg = [STATIC_COLOR, FLEX_COLOR] if is_granular_data else [STATIC_COLOR]
         st.line_chart(df_summary.set_index("Period"), y=y_cols_avg, y_label="Average Price (€/kWh)", color=colors_avg)
             
     st.subheader("Detailed Comparison Table")
@@ -296,6 +304,7 @@ def render_cost_comparison_tab(df: pd.DataFrame):
         cols_to_show = ["Period", "Total Consumption", "Total Static Cost"]
         styler = df_summary[cols_to_show].style
         styler = styler.format({"Total Consumption": "{:.2f} kWh", "Total Static Cost": "€{:.2f}"})
+        
     st.dataframe(styler, hide_index=True, use_container_width=True)
 
 # --- Tab: Usage Pattern Analysis ---
@@ -419,8 +428,8 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         st.info("Please provide data with 15-minute intervals for a more detailed usage profile analysis.")
         return
 
-    # Consumption & Cost Profile (Marimekko Chart)
-    st.subheader("Consumption & Cost Profile")
+    # Consumption & Usage Profile (Marimekko Chart)
+    st.subheader("Usage Profile")
     st.markdown("This chart shows how much each consumption type (Base, Regular, Peak) contributes to your total usage, and the average spot price you paid for each.")
     profile_data = _compute_usage_profile_data(df_filtered)
 
@@ -463,14 +472,20 @@ def _compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
     df["Year"] = df["timestamp"].dt.year
     yearly_summary_agg_dict = {
         "Total Consumption": ("consumption_kwh", "sum"),
-        "Total Flexible Cost": ("total_cost_flexible", "sum"),
         "Total Static Cost": ("total_cost_static", "sum")
     }
+    
+    is_granular_data = calculate_granular_data(df)
+    if is_granular_data:
+        yearly_summary_agg_dict["Total Flexible Cost"] = ("total_cost_flexible", "sum")
+        
     yearly_agg = df.groupby("Year").agg(**yearly_summary_agg_dict).reset_index() # type: ignore
     
     if not yearly_agg.empty and yearly_agg["Total Consumption"].sum() > 0:
-        yearly_agg["Avg. Flex Price (€/kWh)"] = yearly_agg["Total Flexible Cost"] / yearly_agg["Total Consumption"]
-        yearly_agg["Avg. Static Price (€/kWh)"] = yearly_agg["Total Static Cost"] / yearly_agg["Total Consumption"]
+        yearly_agg["Avg Static Price"] = yearly_agg["Total Static Cost"] / yearly_agg["Total Consumption"]
+        if is_granular_data:
+            yearly_agg["Avg. Flex Price"] = yearly_agg["Total Flexible Cost"] / yearly_agg["Total Consumption"]
+
     return yearly_agg
 
 def render_yearly_summary_tab(df: pd.DataFrame):
@@ -480,6 +495,12 @@ def render_yearly_summary_tab(df: pd.DataFrame):
     if yearly_agg.empty:
         st.warning("No data available to generate a yearly summary.")
         return
+    
+    # Rename columns for a more descriptive display in the table
+    display_df = yearly_agg.rename(columns={
+        "Avg. Flex Price": "Avg. Flex Price (€/kWh)",
+        "Avg. Static Price": "Avg. Static Price (€/kWh)"
+    })
         
     style_format: dict = {
         "Total Consumption": "{:,.2f} kWh",
@@ -488,7 +509,7 @@ def render_yearly_summary_tab(df: pd.DataFrame):
         "Avg. Flex Price (€/kWh)": "€{:.4f}",
         "Avg. Static Price (€/kWh)": "€{:.4f}"
     }
-    st.dataframe(yearly_agg.style.format(style_format), hide_index=True, use_container_width=True)
+    st.dataframe(display_df.style.format(style_format), hide_index=True, use_container_width=True)
 
 # --- Tab: Download Data ---
 
@@ -527,6 +548,58 @@ def render_download_tab(df: pd.DataFrame, start_date: date, end_date: date):
             file_name=f"spot_prices_{start_date}_to_{end_date}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+
+# --- FAQ & Help Tab ---
+def render_faq_tab():
+    """Renders the content for the 'FAQ & Help' tab."""
+    st.subheader("Frequently Asked Questions & Help")
+
+    with st.expander("What does this tool do?", expanded=True):
+        st.markdown("""
+        This dashboard allows you to:
+        - **Analyze your electricity consumption** by uploading your historical data.
+        - **Compare the costs** of a flexible (spot-price based) tariff against a static (fixed-price) tariff.
+        - **Simulate savings** from shifting high-consumption activities (like EV charging) to cheaper hours.
+        - **Understand your usage patterns** by classifying your consumption into Base, Regular, and Peak loads.
+        - **Get a data-driven recommendation** on which tariff type is more economical for you.
+        """)
+
+    with st.expander("How do I use this dashboard?"):
+        st.markdown("""
+        1.  **Upload Your Data**: Use the file uploader in the sidebar to upload your consumption data CSV file.
+        2.  **Configure Settings**:
+            - **Country**: Select the country to fetch the correct EPEX spot market prices.
+            - **Analysis Period**: Choose the date range for your analysis.
+            - **Tariff Plans**: Either let the app find the cheapest predefined tariffs or configure your own custom tariffs.
+            - **Load Shifting**: Use the slider to simulate potential savings from shifting your peak usage.
+        3.  **Explore the Tabs**: Navigate through the different tabs to see detailed analyses of prices, costs, and your usage patterns.
+        """)
+
+    with st.expander("What kind of data file do I need?"):
+        st.markdown("""
+        - **Format**: A CSV file containing your electricity consumption.
+        - **Required Columns**: The file must contain at least a timestamp and a consumption value (in kWh). The parser is designed to automatically detect formats from many providers.
+        - **Granularity**: For the best results, especially for the *Usage Pattern Analysis*, data with **15-minute intervals** is recommended. Hourly data also works well. Daily data will have limited analysis capabilities.
+        - **Getting Your Data**: Check your electricity provider's online portal. Many allow you to download your historical consumption data. The link in the sidebar provides more tips.
+        - **Privacy**: The app does not store your data, but when deployed on a public server, the file is temporarily uploaded. It's recommended to anonymize personal information (like names or meter IDs) in the file before uploading, but do not delete the columns.
+        """)
+
+    with st.expander("What do the different 'load types' mean?"):
+        st.markdown("""
+        The *Usage Pattern Analysis* tab classifies your consumption into three types:
+        - **Base Load**: The continuous, minimum level of power your household consumes, even when you're asleep or away (e.g., refrigerator, standby devices). It's calculated by finding the most stable, low-consumption period each day.
+        - **Regular Load**: The variable, everyday consumption above your base load (e.g., lights, cooking, TV).
+        - **Peak Load**: Significant, short-term spikes in consumption, typically from high-power appliances like electric vehicle chargers, heat pumps, or washing machines. The analysis identifies these based on sharp increases in usage that are sustained above a high threshold.
+        """)
+    
+    with st.expander("How does 'Peak Load Shifting' work?"):
+        st.markdown("""
+        The simulation works by taking a percentage of your identified "Peak Load" and moving it from the most expensive hour it occurred in to the cheapest hour within a 4-hour window (+/- 2 hours).
+        
+        This simulates the real-world scenario of programming a smart device (like an EV charger or a heat pump) to run during off-peak, cheaper hours, showing you the potential savings on a flexible tariff.
+        """)
+        
+    st.info("Still questions left? Please check the [ReadMe](https://github.com/albortino/EPEX-Spot-Analysis/blob/main/readme.md) or raise an [issue](https://github.com/albortino/EPEX-Spot-Analysis/issues) on Github!")
 
 # --- Footer ---
 @st.cache_data

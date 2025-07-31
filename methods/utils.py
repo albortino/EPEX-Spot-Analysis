@@ -68,3 +68,9 @@ def calculate_granular_data(df: pd.DataFrame) -> bool:
             is_granular_data = False
             
     return is_granular_data
+
+@st.cache_data(ttl=3600)
+def filter_dataframe(df: pd.DataFrame, start_date: date, end_date: date):
+    """Filters a DataFrame based on start and end dates."""
+    mask = (df["timestamp"].dt.date >= start_date) & (df["timestamp"].dt.date <= end_date)
+    return df.loc[mask]
