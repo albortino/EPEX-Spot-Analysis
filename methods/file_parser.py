@@ -377,7 +377,7 @@ class ConsumptionDataParser:
         df.columns = df.columns.str.strip()
         
         # Check required columns
-        required_cols = [config.timestamp_col] + config.other_cols
+        required_cols = [config.timestamp_col] + config.other_cols #type: ignore
         if config.time_sub_col:
             required_cols.append(config.time_sub_col)
         if config.end_timestamp_col:
@@ -523,7 +523,6 @@ class ConsumptionDataParser:
                     return row["timestamp_local"].tz_localize(timezone).tz_convert("UTC")
 
             return df.apply(safe_localize, axis=1)
-
 
         df = df.sort_values(by='timestamp_local').reset_index(drop=True)
         

@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 import random
 from datetime import datetime, date
@@ -9,13 +8,12 @@ from methods.config import *
 from methods.tariffs import Tariff, TariffManager
 from methods.utils import get_min_max_date, to_excel, get_intervals_per_day, get_aggregation_config
 import methods.data_loader as data_loader
-import methods.ui_components as ui_components
 import methods.charts as charts
 
 # --- Sidebar and Input Controls ---
 
 @st.cache_data(ttl=60*10)
-def _compare_all_tariffs(df: pd.DataFrame, _tariff_manager: TariffManager, country: str) -> tuple[Tariff, Tariff]:
+def _compare_all_tariffs(df_consumption: pd.DataFrame, _tariff_manager: TariffManager, country: str) -> tuple[Tariff | None, Tariff | None]:
     """Finds the cheapest flex and static tariffs from the predefined lists."""
     print(f"{datetime.now().strftime(DATE_FORMAT)}: Calculating cheapest tariff comparison")
     
@@ -23,28 +21,38 @@ def _compare_all_tariffs(df: pd.DataFrame, _tariff_manager: TariffManager, count
     static_options = _tariff_manager.get_static_tariffs_with_custom()
     total_costs = {}
     
-    # Calculate total costs for all non-custom tariffs
+    # Calculate total costs for all non-custom tariffs.
+    # First, ensure we have spot price data for flexible tariff calculations.
+    df = df_consumption.copy()
+    if "spot_price_eur_kwh" not in df.columns:
+        min_date, max_date = get_min_max_date(df)
+        df_spot_prices = data_loader.get_spot_data(country, min_date, max_date)
+        df = data_loader.merge_consumption_with_prices(df, df_spot_prices)
+
     for name, tariff in flex_options.items():
         if name == "Custom": continue
-        
-        # Load spot_price data if necessary
-        if not "spot_price_eur_kwh" in df.columns:
-            min_date, max_date = ui_components.get_min_max_date(df)
-            df_spot_prices = data_loader.get_spot_data(country, min_date, max_date)
-            df = data_loader.merge_consumption_with_prices(df, df_spot_prices)
-    
         total_costs[("flex", name)] = _tariff_manager._calculate_flexible_cost(df, tariff).sum()
     
     for name, tariff  in static_options.items():
         if name == "Custom": continue
         total_costs[("static", name)] = _tariff_manager._calculate_static_cost(df, tariff).sum()
     
-    # Identify the cheapest tariffs based on the calculated costs
-    cheapest_flex_key = min((k for k in total_costs if k[0] == "flex"), key=total_costs.get) # type: ignore
-    cheapest_static_key = min((k for k in total_costs if k[0] == "static"), key=total_costs.get) # type: ignore
-    
-    final_flex_tariff = flex_options[cheapest_flex_key[1]]
-    final_static_tariff = static_options[cheapest_static_key[1]]
+    # Identify the cheapest tariffs based on the calculated costs robustly
+    final_flex_tariff = None
+    flex_keys = [k for k in total_costs if k[0] == "flex"]
+    if flex_keys:
+        cheapest_flex_key = min(flex_keys, key=total_costs.get) #type: ignore
+        final_flex_tariff = flex_options.get(cheapest_flex_key[1])
+    else:
+        st.warning("No predefined flexible tariffs found to compare.")
+
+    final_static_tariff = None
+    static_keys = [k for k in total_costs if k[0] == "static"]
+    if static_keys:
+        cheapest_static_key = min(static_keys, key=total_costs.get) #type: ignore
+        final_static_tariff = static_options.get(cheapest_static_key[1])
+    else:
+        st.warning("No predefined static tariffs found to compare.")
     
     return final_flex_tariff, final_static_tariff
 
@@ -79,7 +87,7 @@ def _return_tariff_selection(_tariff_manager: TariffManager) -> tuple[Tariff, Ta
             )
     return tuple(final_tariffs)
 
-def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager, country: str = AWATTAR_COUNTRY) -> tuple[str, date, date, Tariff, Tariff, float]:
+def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager) -> tuple[str, date, date, Tariff, Tariff, float]:
     """Renders all sidebar inputs and returns the configuration values."""
     print(f"{datetime.now().strftime(DATE_FORMAT)}: Rendering Sidebar")
     with st.sidebar:
@@ -89,7 +97,7 @@ def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager, count
         country_select = {"Austria": "at", "Germany": "de"}
         
         st.subheader("1. Country")
-        selected_country = st.selectbox(label="Select country for EPEX spot prices", options=country_select.keys(), index=0)
+        selected_country = st.selectbox(label="Select country for EPEX spot prices.", options=country_select.keys(), index=0)
         awattar_country = country_select[selected_country]
         
         # 2. Analysis Period Selection
@@ -105,14 +113,17 @@ def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager, count
         
         compare_cheapest = st.checkbox("Compare cheapest tariffs", value=False, help="Automatically selects the most economical predefined tariffs based on your data.")
         if compare_cheapest:
-            final_flex_tariff, final_static_tariff = _compare_all_tariffs(df, tariff_manager, country)
-            st.info(f"Cheapest Flex Tariff:\n\n**{final_flex_tariff.name}**\n\nCheapest Static Tariff:\n\n**{final_static_tariff.name}**")
+            final_flex_tariff, final_static_tariff = _compare_all_tariffs(df, tariff_manager, awattar_country)
+            flex_info = f"Cheapest Flex Tariff:\n\n**{final_flex_tariff.name}**" if final_flex_tariff else "No flexible tariff found."
+            static_info = f"Cheapest Static Tariff:\n\n**{final_static_tariff.name}**" if final_static_tariff else "No static tariff found."
+            st.info(f"{flex_info}\n\n{static_info}")
+
         else:
             final_flex_tariff, final_static_tariff = _return_tariff_selection(tariff_manager)
             
         # 4. Load Shifting Simulation
         st.subheader("4. Cost Simulation")
-        st.markdown("Simulate shifting a percentage of your peak consumption to a cheaper hour within a +/- 2-hour window.", help="This shows the potential savings if you can be flexible with high-power activities like EV charging or running a heat pump.")
+        st.markdown("Simulate shifting a percentage of your peak consumption to a cheaper hour within a +/- 2-hour window.", help="This shows the potential savings if you can be flexible with high-power activities like EV charging, dish washer, washing machine or running a heat pump.")
         shift_percentage = st.slider("Shift Peak Load (%)", min_value=0, max_value=100, value=0, step=5)
 
         return awattar_country, start_date, end_date, final_flex_tariff, final_static_tariff, shift_percentage
@@ -199,17 +210,10 @@ def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     
     # Quartile Distribution Chart
     st.subheader("Distribution Over Time")
-    st.markdown("This chart shows the median price (solid line) and the 25th to 75th percentile range (dotted lines). A wider range indicates higher price volatility.")
+    st.markdown("This chart shows the median spot price (solid line) and the 25th to 75th percentile range (dotted lines) compared to the static tariff price. 50% of the spot prices fall in the orange shaded price range.")
     df_price = _compute_price_distribution_data(df, resolution)
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df_price.index, y=df_price["Spot Price Q3"], mode='lines', line=dict(dash='dot', color=FLEX_COLOR_LIGHT), name='3rd Quartile (Q3)'))
-    fig.add_trace(go.Scatter(x=df_price.index, y=df_price["Spot Price Median"], mode='lines', line=dict(color=FLEX_COLOR, width=3), name='Median Price'))
-    fig.add_trace(go.Scatter(x=df_price.index, y=df_price["Spot Price Q1"], mode='lines', line=dict(dash='dot', color=FLEX_COLOR_LIGHT), name='1st Quartile (Q1)'))
-    fig.add_trace(go.Scatter(x=df_price.index, y=[static_tariff.price_kwh]*len(df_price.index), mode='lines', line=dict(color=STATIC_COLOR, width=2), name='Static Tariff'))
-    
-    fig.update_layout(xaxis_title=df_price.index.name, yaxis_title="Spot Price (€/kWh)", legend_title_text="Metrics", hovermode="x unified")
-    st.plotly_chart(fig, use_container_width=True)
+    price_fig = charts.get_price_chart(df_price, pd.Series([static_tariff.price_kwh]*len(df.index)))
+    st.plotly_chart(price_fig, use_container_width=True)
 
     # Heatmap Analysis
     st.subheader("Average Price Heatmap (Month vs. Hour)")
@@ -423,10 +427,10 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
             st.session_state.random_day = random.choice(available_dates)
             st.rerun()
             
-        df_hour = _compute_example_day(df_filtered, st.session_state.random_day, group=False)
+        df_day= _compute_example_day(df_filtered, st.session_state.random_day, group=False)
 
-        st.caption(f"Displaying data for {st.session_state.random_day.strftime('%A, %Y-%m-%d')} (Total: {df_hour.sum().sum():.2f} kWh)")
-        st.bar_chart(df_hour, color=[BASE_COLOR, PEAK_COLOR, REGULAR_COLOR], x_label="Hour of Day", y_label="Consumption (kWh)")
+        st.caption(f"Displaying data for {st.session_state.random_day.strftime('%A, %Y-%m-%d')} (Total: {df_day.sum().sum():.2f} kWh)")
+        st.bar_chart(df_day, color=[BASE_COLOR, PEAK_COLOR, REGULAR_COLOR], x_label="Hour of Day", y_label="Consumption (kWh)")
 
 # --- Tab: Yearly Summary ---
 
@@ -503,7 +507,7 @@ def render_download_tab(df: pd.DataFrame, start_date: date, end_date: date):
         )
 
 # --- Footer ---
-st.cache_data
+@st.cache_data
 def render_footer():
     """Renders the footer with information about the project and further links."""
     st.markdown("\n\n---")

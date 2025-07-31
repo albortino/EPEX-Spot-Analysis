@@ -13,7 +13,7 @@ st.title("Electricity Tariff Comparison Dashboard")
 st.markdown("Analyze your consumption, compare flexible vs. static tariffs, and understand your usage patterns.")
 
 # --- Main Application ---
-def main(country: str):
+def main():
     
     # Instantiate managers once
     tariff_manager = TariffManager("tariffs_flexible.json", "tariffs_static.json")
@@ -22,8 +22,10 @@ def main(country: str):
     uploaded_file = st.sidebar.file_uploader("Upload Your Consumption CSV", type=["csv"], help="Please see https://awattar-backtesting.github.io/ for more tipps and tricks how to get the consumption data from your network provider.")
     if not uploaded_file:
         st.info("👋 Welcome! Please upload your consumption data to begin.")
-        st.markdown("This project was influenced by https://awattar-backtesting.github.io/, which provides a simple and effective overview.\n\n"
-                   "This tool provides further insights into your consumption behavior and help you to choose the most economic tariff plan.")
+        st.markdown("### Introduction\nThis project was influenced by https://awattar-backtesting.github.io/, which provides a simple and effective overview.\n\n"
+                   "This tool provides further insights into your consumption behavior and help you to choose the most economic tariff plan.\n\n"
+                   "For a detailed description and explanation please refer to this project's [Read Me](https://github.com/albortino/EPEX-Spot-Analysis/blob/main/readme.md).")
+        ui_components.render_footer()
         return
 
     df_consumption = data_loader.process_consumption_data(uploaded_file)
@@ -31,7 +33,7 @@ def main(country: str):
         return
 
     # --- Sidebar and Input Controls ---
-    country, start_date, end_date, flex_tariff, static_tariff, shift_percentage = ui_components.render_sidebar_inputs(df_consumption, tariff_manager, country)
+    country, start_date, end_date, flex_tariff, static_tariff, shift_percentage = ui_components.render_sidebar_inputs(df_consumption, tariff_manager)
     
     # --- Data Loading and Merging ---
     min_date, max_date = ui_components.get_min_max_date(df_consumption)
@@ -95,4 +97,4 @@ def main(country: str):
     ui_components.render_footer()
     
 if __name__ == "__main__":
-    main(AWATTAR_COUNTRY)
+    main()
