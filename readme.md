@@ -49,14 +49,14 @@ Option to exclude days with unusually low consumption, improving the accuracy of
 
 ## How to Use
 
-1. **Clone the Repository:**
+1. **Clone the Repository**
 
 ```bash
 git clone <repository_url>
 cd your-repository-directory
 ```
 
-2. **Install Dependencies:**
+2. **Install Dependencies**
 
 Ensure you have Python and Conda (Anaconda or Miniconda) installed. Then, install the required libraries:
 
@@ -64,7 +64,7 @@ Ensure you have Python and Conda (Anaconda or Miniconda) installed. Then, instal
 conda env create -f environment.yml
 ```
 
-3. **Run the Application:**
+3. **Run the Application**
 
 Launch the Streamlit application from your terminal:
 
@@ -72,18 +72,18 @@ Launch the Streamlit application from your terminal:
 streamlit run app.py
 ```
 
-4. **Upload Consumption Data:**
+4. **Upload Consumption Data**
 
 In the sidebar of the application, use the "Upload Your Consumption CSV" button to upload your electricity usage data. For best results, ensure your data is in hourly or 15-minute intervals.
 
-5. **Configure Settings:**
+5. **Configure Settings**
 
 * **Country:** Select the country for which EPEX spot prices should be fetched (e.g., Germany, Austria).
 * **Analysis Period:** Define the start and end dates for your analysis.
 * **Tariff Plans:** Choose to automatically compare the cheapest predefined tariffs or manually configure your own flexible and static tariff details.
 * **Peak Load Shifting:** Adjust the slider to simulate shifting a percentage of your peak consumption.
 
-6. **Explore Insights:**
+6. **Explore Insights**
 
 Navigate through the different tabs ("Spot Price Analysis", "Cost Comparison", "Usage Pattern Analysis", "Yearly Summary", "Download Data") to view detailed charts, tables, and recommendations.
 
@@ -102,7 +102,7 @@ Navigate through the different tabs ("Spot Price Analysis", "Cost Comparison", "
     * `ui_components.py`: Handles the creation and rendering of all user interface elements, including sidebars, tabs, charts, and user inputs.
     * `tariffs.py`: Defines the `Tariff` class and `TariffManager` for managing and calculating costs associated with different tariff structures.
     * `utils.py`: Contains general utility functions used across the application (e.g., date handling, file export).
-    * `file_parser.py`: Houses the `ConsumptionDataParser` class responsible for parsing various CSV formats of consumption data.
+    * `file_parser.py`: Houses the `ConsumptionDataParser` class responsible for parsing various CSV formats of consumption data. Interacts with [awattar backtesting](https://awattar-backtesting.github.io/) to use the exisitng javascript parsing logic.
     * `charts.py`: Provides custom functions for generating specific plot types used in the dashboard.
 
 ## Acknowledgements
