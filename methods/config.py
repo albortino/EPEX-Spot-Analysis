@@ -2,7 +2,7 @@ from datetime import date
 
 # --- General Configuration ---
 LOCAL_TIMEZONE = "Europe/Vienna"
-MIN_DATE = date(2024, 1, 1)
+MIN_DATE = date(2022, 1, 1)
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 # --- API and Caching Configuration ---

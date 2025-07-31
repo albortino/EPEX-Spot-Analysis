@@ -78,7 +78,7 @@ def main(country: str):
         
     # If/elif blocks render only the selected view's content and keep the user on the same "tab" after an interaction.
     if st.session_state.active_tab == "Spot Price Analysis":
-        ui_components.render_price_analysis_tab(df_analysis, static_tariff)
+        ui_components.render_price_analysis_tab(df_analysis.copy(), static_tariff)
     
     elif st.session_state.active_tab == "Cost Comparison":
         ui_components.render_cost_comparison_tab(df_analysis)
@@ -93,5 +93,6 @@ def main(country: str):
         ui_components.render_download_tab(df_analysis, start_date, end_date)
 
     ui_components.render_footer()
+    
 if __name__ == "__main__":
     main(AWATTAR_COUNTRY)

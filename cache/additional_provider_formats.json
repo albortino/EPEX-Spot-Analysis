@@ -1,0 +1,38 @@
+[
+    {
+        "name": "EnergieNetzeSteiermark user",
+        "usage_col": "Verbrauch",
+        "timestamp_col": "Verbrauchszeitraum Beginn",
+        "time_sub_col": null,
+        "date_format": "%d.%m.%Y %H:%M",
+        "other_cols": [],
+        "should_skip_func": null,
+        "fixup_timestamp": false,
+        "separator": ";",
+        "decimal": ",",
+        "skiprows": 1,
+        "encoding": "utf-8-sig",
+        "feedin": false,
+        "end_timestamp_col": null,
+        "preprocess_date_func": null
+    },
+
+    {
+        "name": "LinzAG daily",
+        "usage_col": "Energiemenge in kWh",
+        "timestamp_col": "Datum",
+        "time_sub_col": null,
+        "date_format": "%d.%m.%Y",
+        "other_cols": ["Ersatzwert"],
+        "should_skip_func": null,
+        "fixup_timestamp": false,
+        "separator": ";",
+        "decimal": ",",
+        "skiprows": 0,
+        "encoding": "utf-8-sig",
+        "feedin": false,
+        "end_timestamp_col": null,
+        "preprocess_date_func": null
+    }
+
+]

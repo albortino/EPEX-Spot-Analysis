@@ -80,7 +80,7 @@ def process_consumption_data(uploaded_file, aggregation_level: str = "h") -> pd.
         return pd.DataFrame()
     try:
         parser = ConsumptionDataParser(local_timezone=LOCAL_TIMEZONE)
-        df = parser.parse_file(uploaded_file, aggregation_level)
+        df = parser.parse_file(uploaded_file)
         if df.empty:
             st.error("Could not parse the CSV file. Please ensure it is from a supported provider or in the default format.")
         return df.convert_dtypes()

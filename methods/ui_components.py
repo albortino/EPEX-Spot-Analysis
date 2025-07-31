@@ -153,8 +153,7 @@ def render_recommendation(df: pd.DataFrame):
 
     # Calculate the proportion of peak consumption that occurs during the cheapest 25% of hours
     df["price_quantile"] = df.groupby(pd.Grouper(key="timestamp", freq="MS"))["spot_price_eur_kwh"].transform(
-        lambda x: pd.qcut(x, 4, labels=False, duplicates="drop")
-    )
+        lambda x: pd.qcut(x, 4, labels=False, duplicates="drop"))
     peak_total_kwh = df["peak_load_kwh"].sum()
     peak_cheap_kwh = df[df["price_quantile"] == 0]["peak_load_kwh"].sum()
     peak_ratio = peak_cheap_kwh / peak_total_kwh if peak_total_kwh > 0 else 0
@@ -267,7 +266,7 @@ def render_cost_comparison_tab(df: pd.DataFrame):
         st.line_chart(df_summary.set_index("Period"), y=["Avg. Flexible Price (€/kWh)", "Avg. Static Price (€/kWh)"], y_label="Average Price (€/kWh)", color=[FLEX_COLOR, STATIC_COLOR])
             
     st.subheader("Detailed Comparison Table")
-    st.text("Review the costs and savings for each period.")
+    st.text("Review the costs and savings for each period.", help="Note: For Austria, this table does not include 'Strompreisbremse' in the years before 2025, nor 'Energieabgabe' or network fees!")
     styler = df_summary[["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]].style
     styler = styler.map(lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}", subset=["Difference (€)"]) #type: ignore
     styler = styler.format({"Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"})
@@ -508,4 +507,4 @@ st.cache_data
 def render_footer():
     """Renders the footer with information about the project and further links."""
     st.markdown("\n\n---")
-    st.markdown("""Developed by [__albortino__](https://github.com/albortino). This tool builds upon [awattar backtesting](https://awattar-backtesting.github.io), which provides further use cased and analyses.""")
+    st.markdown("""Developed by [__albortino__](https://github.com/albortino). This tool builds upon the great work of [awattar backtesting](https://awattar-backtesting.github.io), which provides further analyses.""")
