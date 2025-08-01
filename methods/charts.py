@@ -28,6 +28,7 @@ def get_price_chart(df: pd.DataFrame, static_price: pd.Series) -> go.Figure:
 
 
 def get_heatmap(df: pd.DataFrame) -> go.Figure:
+
     fig = px.imshow(
         df,
         labels=dict(x="Hour of Day", y="Month", color="Avg Spot Price (€/kWh)"),
@@ -207,4 +208,37 @@ def get_seasonality_charts(model: Prophet, forecast: pd.DataFrame) -> go.Figure:
         elif trace.fill == 'tonexty': # Uncertainty bands usually have fill='tonexty'
             trace.fillcolor = FORECAST_UNCERTAINTY_COLOR + '40' # Adding transparency
                 
+    return fig
+
+def plot_example_day(df_day: pd.DataFrame, base_color: str, regular_color: str, peak_color: str) -> go.Figure:
+    fig = go.Figure()
+    hours = df_day.index.astype(str)  # e.g., "0", "1", ..., "23"
+
+    fig.add_trace(go.Bar(
+        x=hours,
+        y=df_day["Base Load"],
+        name="Base Load",
+        marker_color=base_color
+    ))
+    fig.add_trace(go.Bar(
+        x=hours,
+        y=df_day["Regular Load"],
+        name="Regular Load",
+        marker_color=regular_color
+    ))
+    fig.add_trace(go.Bar(
+        x=hours,
+        y=df_day["Peak Load"],
+        name="Peak Load",
+        marker_color=peak_color
+    ))
+
+    fig.update_layout(
+        barmode="stack",
+        xaxis_title="Hour of Day",
+        yaxis_title="Consumption (kWh)",
+        legend_title="Load Type",
+        margin=dict(l=40, r=20, t=40, b=40),
+        height=400
+    )
     return fig

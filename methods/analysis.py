@@ -7,7 +7,9 @@ def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame,
     Classifies hourly consumption into Base, Peak, and Regular load using a stateful approach.
     A peak event starts with a sharp increase in consumption (trigger) and continues
     as long as consumption remains above a high-usage sustain threshold.
-    Prefers data in 15-minute intervals but returns clusters for every hour.
+    Base Usage is always classified. However, in every time resolution, only either peak or regular usage
+    can appear. This is intentionally done instead of taking the mean regular usage before and after a peak
+    as this would further bias the analysis.
     """
 
     if df.empty:

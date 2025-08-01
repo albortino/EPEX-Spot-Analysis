@@ -183,7 +183,7 @@ def render_absence_days(df: pd.DataFrame, base_threshold: float) -> pd.DataFrame
     return df
 
 @st.cache_data(ttl=3600)
-def render_recommendation(df: pd.DataFrame):
+def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: Tariff):
     """Displays the final tariff recommendation based on calculated savings."""
     logger.log("Rendering Recommendation")
 
@@ -200,6 +200,7 @@ def render_recommendation(df: pd.DataFrame):
     peak_total_kwh = df["peak_load_kwh"].sum()
     peak_cheap_kwh = df[df["price_quantile"] == 0]["peak_load_kwh"].sum()
     peak_ratio = peak_cheap_kwh / peak_total_kwh if peak_total_kwh > 0 else 0
+    
 
     # Display the appropriate recommendation message
     if savings > 0:
@@ -207,10 +208,12 @@ def render_recommendation(df: pd.DataFrame):
             additional_text = f"This is a great fit. You align **{peak_ratio:.0%}** of your peak usage with the cheapest market prices."
         else:
             additional_text = "You could save even more by shifting high-consumption activities to times with lower spot prices."
-            
-        st.success(f"✅ Flexible Plan Recommended: You could have saved €{savings:.2f}\n\n{additional_text}")
+        
+        link_text = f"\n\nCheck cheapest offer: {flex_tariff.link}" if flex_tariff.link else ""
+        st.success(f"✅ Flexible Plan Recommended: You could have saved €{savings:.2f}\n\n{additional_text}{link_text}")
     else:
-        st.warning(f"⚠️ Static Plan Recommended: The flexible plan would have cost €{-savings:.2f} more.\n\nA fixed price offers better cost stability for your current usage pattern.")
+        link_text = f"\n\nCheck cheapest offer: {static_tariff.link}" if static_tariff.link else ""
+        st.warning(f"⚠️ Static Plan Recommended: The flexible plan would have cost €{-savings:.2f} more.\n\nA fixed price offers better cost stability for your current usage pattern.{link_text}")
 
 # --- Tab: Spot Price Analysis ---
 
@@ -232,7 +235,13 @@ def _compute_price_distribution_data(df: pd.DataFrame, resolution: str) -> pd.Da
 def _compute_heatmap_data(df: pd.DataFrame) -> pd.DataFrame:
     """Computes and caches the data needed for the price heatmap."""
     logger.log("Computing Heatmap Data")
-    return df.pivot_table(values="spot_price_eur_kwh", index=df["timestamp"].dt.month, columns=df["timestamp"].dt.hour, aggfunc="mean")
+    df_pvt = df.pivot_table(values="spot_price_eur_kwh", index=df["timestamp"].dt.month, columns=df["timestamp"].dt.hour, aggfunc="mean")
+    
+    # Create a copy and convert integer column names to strings for plotly compatibility.
+    df_pvt = df_pvt.copy()
+    df_pvt.columns = df_pvt.columns.map(str)
+    
+    return df_pvt
 
 def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     """Renders the interactive analysis of electricity spot prices."""
@@ -690,10 +699,14 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
             st.session_state.random_day = random.choice(available_dates)
             st.rerun()
             
-        df_day= _compute_example_day(df_filtered, st.session_state.random_day, group=False)
+        df_day = _compute_example_day(df_filtered, st.session_state.random_day, group=False)
 
+        # Ensure correct stacking order for the bar chart: Base (bottom), Regular, Peak (top).
+        df_day = df_day[["Base Load", "Regular Load", "Peak Load"]]
         st.caption(f"Displaying data for {st.session_state.random_day.strftime('%A, %Y-%m-%d')} (Total: {df_day.sum().sum():.2f} kWh)")
-        st.bar_chart(df_day, color=[BASE_COLOR, PEAK_COLOR, REGULAR_COLOR], x_label="Hour of Day", y_label="Consumption (kWh)")
+        example_day_fig = charts.plot_example_day(df_day, BASE_COLOR, REGULAR_COLOR, PEAK_COLOR)
+        st.plotly_chart(example_day_fig, use_container_width=True)
+        #st.bar_chart(df_day, color=[BASE_COLOR, REGULAR_COLOR, PEAK_COLOR], x_label="Hour of Day", y_label="Consumption (kWh)")
 
 # --- Tab: Yearly Summary ---
 
@@ -814,6 +827,8 @@ def render_faq_tab():
         - **Granularity**: For the best results, especially for the *Usage Patterns*, data with **15-minute intervals** is recommended. Hourly data also works well. Daily data will have limited analysis capabilities.
         - **Getting Your Data**: Check your electricity provider's online portal. Many allow you to download your historical consumption data. The link in the sidebar provides more tips.
         - **Privacy**: The app does not store your data, but when deployed on a public server, the file is temporarily uploaded. It's recommended to anonymize personal information (like names or meter IDs) in the file before uploading, but do not delete the columns.
+        
+        Pro Tip: [aWATTar backtesting](https://awattar-backtesting.github.io) provides detailed instructions for different network operators. 
         """)
 
     with st.expander("What do the different 'load types' mean?"):

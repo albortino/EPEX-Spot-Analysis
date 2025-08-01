@@ -1,9 +1,9 @@
-name: streamlit
+name: epex-spot-analysis
 channels:
   - defaults
   - conda-forge
 dependencies:
-  - python=3.13.5
+  - python=3.11
   - pip
   - streamlit
   - pandas
@@ -14,5 +14,5 @@ dependencies:
   - matplotlib
   - xlsxwriter
   - requests
-  - pip:
-    - prophet
+  - prophet
+  - watchdog

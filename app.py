@@ -9,8 +9,6 @@ from methods.utils import filter_dataframe
 
 # --- Page and App Configuration ---
 st.set_page_config(layout="wide")
-st.title("Electricity Tariff Comparison Dashboard")
-st.markdown("Analyze your consumption, compare flexible vs. static tariffs, and understand your usage patterns.")
 
 # --- Main Application ---
 def main():
@@ -19,13 +17,25 @@ def main():
     tariff_manager = TariffManager("tariffs_flexible.json", "tariffs_static.json")
 
     # --- File Upload and Initial Data Processing ---
-    uploaded_file = st.sidebar.file_uploader("Upload Your Consumption CSV", type=["csv"], help="Please see https://awattar-backtesting.github.io/ for more tipps and tricks how to get the consumption data from your network provider.")
+    uploaded_file = None
+    with st.sidebar:
+        st.header("Upload Data")
+        uploaded_file = st.file_uploader(
+            "First upload consumption data from your network provider.",
+            type=["csv"],
+            help="See the 'FAQ & Help' tab for tips on getting your data from your network provider.",
+            key="file_uploader"
+        )
+        if not uploaded_file:
+            st.caption("For best results, your data should have 15-minute or hourly intervals.")
+        
     if not uploaded_file:
-        st.info("👋 Welcome! Please upload your consumption data to begin.")
+        st.markdown("## Electricity Tariff Comparison Dashboard\n\nAnalyze your consumption, compare flexible vs. static tariffs, and understand your usage patterns.")
         st.markdown("### Introduction\nThis project was influenced by https://awattar-backtesting.github.io/, which provides a simple and effective overview.\n\n"
                    "This tool provides further insights into your consumption behavior and help you to choose the most economic tariff plan.\n\n"
                    "For a detailed description and explanation please refer to this project's [Read Me](https://github.com/albortino/EPEX-Spot-Analysis/blob/main/readme.md).\n\n"
                    "IMPORTANT: File uploads are in fact uploaded to a server when the app is running on Steamlit Cloud. Even though no file is stored by this script, others might have access to it. Therefore, please anonymize any personal data first, but don't delete the columns.")
+        st.info("👋 Welcome! Please upload your consumption data to begin.")
         ui_components.render_footer()
         return
 
@@ -55,7 +65,7 @@ def main():
     # --- Final Filtering and Rendering ---
     df_analysis = ui_components.render_absence_days(df_analysis, base_threshold)
     
-    ui_components.render_recommendation(df_analysis)
+    ui_components.render_recommendation(df_analysis, flex_tariff, static_tariff)
 
     # Define the "tabs"
     tab_options = [
