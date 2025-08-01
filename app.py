@@ -17,24 +17,12 @@ def main():
     tariff_manager = TariffManager("tariffs_flexible.json", "tariffs_static.json")
 
     # --- File Upload and Initial Data Processing ---
-    uploaded_file = None
-    with st.sidebar:
-        st.header("Upload Data")
-        uploaded_file = st.file_uploader(
-            "First upload consumption data from your network provider.",
-            type=["csv"],
-            help="See the 'FAQ & Help' tab for tips on getting your data from your network provider.",
-            key="file_uploader"
-        )
-        if not uploaded_file:
-            st.caption("For best results, your data should have 15-minute or hourly intervals.")
-        
+    uploaded_file = ui_components.render_upload_file()
+
     if not uploaded_file:
         st.markdown("## Electricity Tariff Comparison Dashboard\n\nAnalyze your consumption, compare flexible vs. static tariffs, and understand your usage patterns.")
-        st.markdown("### Introduction\nThis project was influenced by https://awattar-backtesting.github.io/, which provides a simple and effective overview.\n\n"
-                   "This tool provides further insights into your consumption behavior and help you to choose the most economic tariff plan.\n\n"
-                   "For a detailed description and explanation please refer to this project's [Read Me](https://github.com/albortino/EPEX-Spot-Analysis/blob/main/readme.md).\n\n"
-                   "IMPORTANT: File uploads are in fact uploaded to a server when the app is running on Steamlit Cloud. Even though no file is stored by this script, others might have access to it. Therefore, please anonymize any personal data first, but don't delete the columns.")
+        st.markdown("### Introduction\nThis project was influenced by https://awattar-backtesting.github.io/, which provides a simple and effective overview. This tool provides further insights into your consumption behavior and help you to choose the most economic tariff plan. For a detailed description and explanation please refer to this project's [Read Me](https://github.com/albortino/EPEX-Spot-Analysis/blob/main/readme.md).\n\n"
+                   "IMPORTANT: File uploads are in fact uploaded to a server when the app is running on Steamlit Cloud. Even though no file is stored by this script, others might have access to it!")
         st.info("👋 Welcome! Please upload your consumption data to begin.")
         ui_components.render_footer()
         return
@@ -48,7 +36,7 @@ def main():
     
     # --- Data Loading and Merging ---
     df_consumption = filter_dataframe(df_consumption, start_date, end_date)
-    min_date, max_date = ui_components.get_min_max_date(df_consumption)
+    min_date, max_date = ui_components.get_min_max_date(df_consumption, config.TODAY_IS_MAX_DATE)
     df_spot_prices = data_loader.get_spot_data(country, min_date, max_date)
     df_merged = data_loader.merge_consumption_with_prices(df_consumption, df_spot_prices)
 

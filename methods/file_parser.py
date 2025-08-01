@@ -4,6 +4,7 @@ import re
 import requests
 import os
 import json
+import pytz
 from typing import List, Optional
 from dataclasses import dataclass, asdict
 from methods.config import LOCAL_TIMEZONE, CACHE_FOLDER
@@ -489,9 +490,7 @@ class ConsumptionDataParser:
         """
         Convert timestamp to UTC and standardize the output format.
         """
-        import pandas as pd
-
-        def localize_with_dst_disambiguation(df: pd.DataFrame, timezone: str) -> pd.Series:
+        def handle_dst_transitions(df: pd.DataFrame, timezone: str) -> pd.Series:
             """
             Localize 'timestamp_local' with proper DST disambiguation and convert to UTC.
 
@@ -531,15 +530,163 @@ class ConsumptionDataParser:
         if df["timestamp_local"].dt.tz is not None:
             df["timestamp"] = df["timestamp_local"].dt.tz_convert("UTC")
         else:
-            # Winter/summer time may lead to errors. Therefore use workaround
-            df["timestamp"] = localize_with_dst_disambiguation(df, "Europe/Vienna")
-            #df["timestamp"] = df["timestamp_local"].dt.tz_localize(self.local_timezone, ambiguous='infer').dt.tz_convert("UTC")
+            try:
+                # Winter/summer time may lead to errors. Therefore use workaround
+                df["timestamp"] = handle_dst_transitions(df, "Europe/Vienna")
+            except Exception as e:
+                logger.log(f"Error while localizing dataframe: {e}", severity=1)
+            
+            try:
+                df["timestamp"] = df["timestamp_local"].dt.tz_localize(self.local_timezone, ambiguous='NaT').dt.tz_convert("UTC")
+            except Exception as e:
+                logger.log(f"Error while localizing dataframe with fallback: {e}", severity=1)
 
         # Resamples the data to hourly basis if it is not in 15 minutes (e.g. for days).
         aggregation_level = "15min" if get_intervals_per_day(df) > 24 else "h"
         df = df.set_index("timestamp")["consumption_kwh"].resample(aggregation_level).sum().dropna().reset_index()
+        df = df[["timestamp", "consumption_kwh"]].reset_index(drop=True)
         
-        return df[["timestamp", "consumption_kwh"]].reset_index(drop=True)
+        if df.empty:
+            logger.log(f"Error while standardizing dataframe. DataFrame is empty!")
+        
+        return df
+
+    def _standardize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert timestamp to UTC and standardize the output format.
+        Handles DST transitions robustly.
+        """
+        
+        def handle_dst_transitions(df: pd.DataFrame, timezone_str: str) -> pd.Series:
+            """
+            Handle DST transitions by identifying and processing different types of timestamps.
+            
+            Parameters:
+                df: DataFrame with a 'timestamp_local' column (naive datetime)
+                timezone_str: Timezone string (e.g., 'Europe/Vienna')
+                
+            Returns:
+                A pandas Series with timezone-aware UTC timestamps.
+            """
+            timezone = pytz.timezone(timezone_str)
+            utc_timestamps = []
+            
+            for timestamp in df["timestamp_local"]:
+                try:
+                    # First, try normal localization
+                    localized = timezone.localize(timestamp)
+                    utc_timestamps.append(localized.astimezone(pytz.UTC))
+                    
+                except pytz.AmbiguousTimeError:
+                    # Handle fall-back transition (ambiguous time)
+                    # Default to DST=False (standard time) for consistency
+                    localized = timezone.localize(timestamp, is_dst=False)
+                    utc_timestamps.append(localized.astimezone(pytz.UTC))
+                    logger.log(f"Ambiguous time {timestamp} resolved to standard time")
+                    
+                except pytz.NonExistentTimeError:
+                    # Handle spring-forward transition (non-existent time)
+                    # Move forward to the next valid time
+                    try:
+                        # Try adding 1 hour to skip the gap
+                        adjusted_timestamp = timestamp + pd.Timedelta(hours=1)
+                        localized = timezone.localize(adjusted_timestamp)
+                        utc_timestamps.append(localized.astimezone(pytz.UTC))
+                        logger.log(f"Non-existent time {timestamp} adjusted to {adjusted_timestamp}")
+                    except Exception:
+                        # If that fails, use UTC directly
+                        utc_timestamps.append(timestamp.replace(tzinfo=pytz.UTC))
+                        logger.log(f"Non-existent time {timestamp} treated as UTC")
+                        
+                except Exception as e:
+                    # Fallback for any other errors
+                    logger.log(f"Unexpected error localizing {timestamp}: {e}")
+                    utc_timestamps.append(timestamp.replace(tzinfo=pytz.UTC))
+            
+            return pd.Series(utc_timestamps, index=df.index)
+        
+        # Input validation
+        if df.empty:
+            logger.log("Input DataFrame is empty")
+            return df
+            
+        if "timestamp_local" not in df.columns:
+            logger.log("DataFrame missing 'timestamp_local' column")
+            return df
+            
+        if "consumption_kwh" not in df.columns:
+            logger.log("DataFrame missing 'consumption_kwh' column")
+            return df
+        
+        # Sort by timestamp to ensure proper ordering
+        df = df.sort_values(by='timestamp_local').reset_index(drop=True)
+        
+        # Handle timezone conversion
+        if df["timestamp_local"].dt.tz is not None:
+            # Already timezone-aware, just convert to UTC
+            df["timestamp"] = df["timestamp_local"].dt.tz_convert("UTC")
+            logger.log("Converted timezone-aware timestamps to UTC")
+            
+        else:
+            # Handle naive timestamps
+            timezone_str = getattr(self, 'local_timezone', 'Europe/Vienna')
+            
+            try:
+                # Use our robust DST handler
+                df["timestamp"] = handle_dst_transitions(df, timezone_str)
+                logger.log(f"Successfully localized naive timestamps using {timezone_str}")
+                
+            except Exception as e:
+                logger.log(f"Error in DST transition handling: {e}")
+                
+                # Final fallback: treat as UTC
+                try:
+                    df["timestamp"] = df["timestamp_local"].dt.tz_localize("UTC")
+                    logger.log("Fallback: treated naive timestamps as UTC")
+                except Exception as fallback_error:
+                    logger.log(f"Even fallback failed: {fallback_error}")
+                    return pd.DataFrame()  # Return empty DataFrame on complete failure
+        
+        # Validate that we have valid timestamps
+        if df["timestamp"].isna().any():
+            logger.log("Some timestamps could not be converted, dropping NaT values")
+            df = df.dropna(subset=["timestamp"])
+        
+        if df.empty:
+            logger.log("No valid timestamps after conversion")
+            return df
+        
+        # Determine aggregation level
+        try:
+            intervals_per_day = get_intervals_per_day(df)
+            aggregation_level = "15min" if intervals_per_day > 24 else "h"
+            logger.log(f"Using aggregation level: {aggregation_level}")
+        except Exception as e:
+            logger.log(f"Could not determine intervals per day: {e}, defaulting to hourly")
+            aggregation_level = "h"
+        
+        # Resample data
+        try:
+            df_resampled = (df.set_index("timestamp")["consumption_kwh"]
+                        .resample(aggregation_level)
+                        .sum()
+                        .dropna()
+                        .reset_index())
+            
+            # Ensure we have the expected columns
+            df_result = df_resampled[["timestamp", "consumption_kwh"]].reset_index(drop=True)
+            
+            if df_result.empty:
+                logger.log("DataFrame is empty after resampling")
+            else:
+                logger.log(f"Successfully resampled to {len(df_result)} rows")
+                
+            return df_result
+            
+        except Exception as e:
+            logger.log(f"Error during resampling: {e}")
+            return pd.DataFrame()
+
 
 # Example usage
 if __name__ == "__main__":

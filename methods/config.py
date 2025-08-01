@@ -36,3 +36,7 @@ STD_MULTIPLE = 1.25
 
 # --- Forecast Parameters ---
 THRESHOLD_STABLE_TREND = 5
+
+# --- DEBUG Parameters ---
+TODAY_IS_MAX_DATE = False
+DEBUG = True

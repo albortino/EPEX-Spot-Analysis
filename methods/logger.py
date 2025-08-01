@@ -1,7 +1,7 @@
 import os
 import inspect
 from datetime import datetime
-
+from methods.config import DEBUG
 class Logger:
     _instance = None
 
@@ -10,7 +10,7 @@ class Logger:
             cls._instance = super(Logger, cls).__new__(cls)
         return cls._instance
 
-    def __init__(self, log_dir="logs", date_format="%Y-%m-%d %H:%M:%S"):
+    def __init__(self, log_dir="logs", date_format="%Y-%m-%d %H:%M:%S", debug: bool = False):
         # The initialized check prevents re-running __init__ on the singleton instance
         if not hasattr(self, 'initialized'):
             self.log_dir = log_dir
@@ -18,7 +18,9 @@ class Logger:
             if not os.path.exists(self.log_dir):
                 os.makedirs(self.log_dir)
             self.initialized = True
+            self.debug = debug
 
+    @property
     def _get_log_filepath(self):
         today = datetime.now().strftime("%Y-%m-%d")
         return os.path.join(self.log_dir, f"log_{today}.txt")
@@ -49,5 +51,5 @@ class Logger:
                 print(f"{now} [logger.py]: CRITICAL - Failed to write to log file. Error: {e}")
 
 # Singleton instance to be imported and used across the application
-logger = Logger()
+logger = Logger(debug=DEBUG)
 

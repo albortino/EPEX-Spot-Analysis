@@ -3,6 +3,7 @@ import pandas as pd
 import random
 from datetime import date
 import numpy as np
+import io
 
 from prophet import Prophet
 
@@ -14,6 +15,49 @@ import methods.charts as charts
 from methods.logger import logger
 
 # --- Sidebar and Input Controls ---
+
+def render_upload_file():
+    """Renders the file upload widget and returns the uploaded file."""
+
+    with st.sidebar:
+        st.header("Upload Data")
+        
+        if DEBUG:
+            if st.button("Load Example Data"):
+                try:
+
+                    # Read the example data file from disk
+                    with open("EXAMPLE-DATA-15M.csv", "r") as f:
+                        example_data_content = f.read()
+                    
+                    # Create a BytesIO object from the file content and ensure the content is encoded to bytes.
+                    example_data_io = io.BytesIO(example_data_content.encode('utf-8'))
+                    
+                    # Directly update the session state for the file_uploader key
+                    st.session_state["file_uploader"] = example_data_io
+                    
+                    # Trigger a rerun of the Streamlit app.
+                    # On the rerun, the st.file_uploader widget will now read the BytesIO object
+                    # from st.session_state["file_uploader"], and its return value will be populated.
+                    st.rerun()
+                    
+                except FileNotFoundError:
+                    st.error("Example data file 'EXAMPLE-DATA-15M.csv' not found.")
+                    
+                except Exception as e:
+                    st.error(f"An error occurred loading example data: {e}")
+                        
+
+        uploaded_file_widget = st.file_uploader(
+            "First upload consumption data from your network provider.",
+            type=["csv"],
+            help="See the 'FAQ & Help' tab for tips on getting your data from your network provider.")
+        
+        if not uploaded_file_widget:
+            st.caption("For best results, your data should have 15-minute or hourly intervals.")
+
+    return st.session_state.get("file_uploader")
+
 
 @st.cache_data(ttl=60*10)
 def _compare_all_tariffs(df_consumption: pd.DataFrame, _tariff_manager: TariffManager, country: str) -> tuple[Tariff | None, Tariff | None]:
@@ -28,7 +72,7 @@ def _compare_all_tariffs(df_consumption: pd.DataFrame, _tariff_manager: TariffMa
     # First, ensure we have spot price data for flexible tariff calculations.
     df = df_consumption.copy()
     if "spot_price_eur_kwh" not in df.columns:
-        min_date, max_date = get_min_max_date(df)
+        min_date, max_date = get_min_max_date(df, today_as_max=TODAY_IS_MAX_DATE)
         df_spot_prices = data_loader.get_spot_data(country, min_date, max_date)
         df = data_loader.merge_consumption_with_prices(df, df_spot_prices)
 
@@ -105,7 +149,7 @@ def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager) -> tu
 
         # 2. Analysis Period Selection (with Reset button)
         with st.expander("Select Analysis Period", expanded=True):
-            min_date, max_date = get_min_max_date(df)
+            min_date, max_date = get_min_max_date(df, today_as_max=TODAY_IS_MAX_DATE)
             
             # This button will clear the session state for the date input
             if st.button("Reset to Default"):
