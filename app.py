@@ -36,22 +36,18 @@ def main():
     
     # --- Data Loading and Merging ---
     df_consumption = filter_dataframe(df_consumption, start_date, end_date)
-    print("DEBUG Consumption", df_consumption["timestamp"].min(), df_consumption["timestamp"].max())
     min_date, max_date = ui_components.get_min_max_date(df_consumption, config.TODAY_IS_MAX_DATE)
     df_spot_prices = data_loader.get_spot_data(country, min_date, max_date)
     df_merged = data_loader.merge_consumption_with_prices(df_consumption, df_spot_prices)
-    print("DEBUG merged", df_merged["timestamp"].min(), df_merged["timestamp"].max())
 
     if df_merged.empty:
         st.warning("No overlapping data found for the selected period. Please check your file's date range.")
         return
     
     # --- Core Analysis Pipeline ---
-
     df_classified, base_threshold, peak_threshold = analysis.classify_usage(df_merged, config.LOCAL_TIMEZONE)
     df_with_shifting = analysis.simulate_peak_shifting(df_classified, shift_percentage)
     df_analysis = tariff_manager.run_cost_analysis(df_with_shifting, flex_tariff, static_tariff)
-    print("DEBUG Analysis", df_analysis["timestamp"].min(), df_analysis["timestamp"].max())
 
     # --- Final Filtering and Rendering ---
     df_analysis = ui_components.render_absence_days(df_analysis, base_threshold)

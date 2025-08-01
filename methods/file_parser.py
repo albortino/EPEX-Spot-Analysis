@@ -152,7 +152,7 @@ class JavaScriptNetzbetreiberParser:
                     continue
                 
             if not in_string:
-                if char in [""", """]: # Within apostrophes
+                if char in ["'", '"']: # Within apostrophes
                     in_string = True
                     string_char = char
                     i += 1
@@ -190,9 +190,9 @@ class JavaScriptNetzbetreiberParser:
         Clean a string parameter by removing quotes.
         """
         s = s.strip()
-        #if s.startswith(""") and s.endswith("""):
+        #if s.startswith("'") and s.endswith("'"):
         #    return s[1:-1]
-        #if s.startswith(""") and s.endswith("""):
+        #if s.startswith('"') and s.endswith('"'):
         #    return s[1:-1]
         return s
     
@@ -422,7 +422,7 @@ class ConsumptionDataParser:
         
         # Parse timestamps
         if config.date_format == "ISO8601":
-            df["timestamp_local"] = pd.to_datetime(df["timestamp_str"])
+            df["timestamp_local"] = pd.to_datetime(df["timestamp_str"], utc=True)
         else:
             df["timestamp_local"] = pd.to_datetime(df["timestamp_str"], format=config.date_format, dayfirst=True)
         

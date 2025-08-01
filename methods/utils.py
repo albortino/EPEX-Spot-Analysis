@@ -37,7 +37,13 @@ def get_intervals_per_day(df: pd.DataFrame) -> int:
     # Ensure a date column exists for grouping
     if "date" not in df.columns:
         df_temp = df.copy()
-        df_temp["date"] = df_temp["timestamp"].dt.date
+        if "timestamp" in df.columns:
+            df_temp["date"] = df_temp["timestamp"].dt.date
+        elif "ds" in df.columns:
+            df_temp["date"] = df_temp["ds"].dt.date
+        else:
+            raise KeyError("No date column provided")
+            
     else:
         df_temp = df
 

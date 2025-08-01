@@ -5,6 +5,19 @@ from methods.config import FLEX_COLOR, MEKKO_BORDER, FLEX_COLOR_LIGHT, STATIC_CO
 import calendar
 from prophet import Prophet
 
+def _get_interval_text(intervals_per_day: int) -> str:
+
+    # Determine y-axis label based on data granularity
+    if intervals_per_day == 24:
+        interval_text = "per hour"
+    elif intervals_per_day > 24 and (1440 % intervals_per_day == 0):
+        minutes = 1440 // intervals_per_day
+        interval_text = f"per {minutes} min"
+    else:
+        interval_text = "" # Fallback for daily data or other resolutions
+        
+    return interval_text
+
 def get_price_chart(df: pd.DataFrame, static_price: pd.Series) -> go.Figure:
     fig = go.Figure()
 
@@ -62,15 +75,7 @@ def get_consumption_chart(df: pd.DataFrame, intervals_per_day: int) -> go.Figure
     fig.add_trace(go.Scatter(x=idx, y=df["Consumption Median"], mode="lines", line=dict(color=FLEX_COLOR, width=3), name="Median Price"))
     fig.add_trace(go.Scatter(x=idx, y=df["Consumption Q1"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR), name="1st Quartile (Q1)"))
 
-    # Determine y-axis label based on data granularity
-    if intervals_per_day == 24:
-        interval_text = "per hour"
-    elif intervals_per_day > 24 and (1440 % intervals_per_day == 0):
-        minutes = 1440 // intervals_per_day
-        interval_text = f"per {minutes} min"
-    else:
-        interval_text = "" # Fallback for daily data or other resolutions
-    yaxis_title = f"Consumption (kWh {interval_text})".strip()
+    yaxis_title = f"Consumption (kWh {_get_interval_text(intervals_per_day)})".strip()
 
     fig.update_layout(xaxis_title=idx.name, yaxis_title=yaxis_title, legend_title_text="Metrics", hovermode="x unified")
 
@@ -194,9 +199,10 @@ def get_trend_chart(df_history: pd.DataFrame, df_forecast: pd.DataFrame) -> go.F
         line=dict(color=FLEX_COLOR, width=3)
     ))
 
+
     fig.update_layout(
         xaxis_title="Date",
-        yaxis_title="Consumption (kWh)",
+        yaxis_title=f"Consumption (kWh/day)",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         showlegend=True
     )
@@ -221,7 +227,7 @@ def get_seasonality_charts(model: Prophet, forecast: pd.DataFrame) -> go.Figure:
                 
     return fig
 
-def plot_example_day(df_day: pd.DataFrame, base_color: str, regular_color: str, peak_color: str) -> go.Figure:
+def plot_example_day(df_day: pd.DataFrame, intervals_per_day: int,base_color: str, regular_color: str, peak_color: str) -> go.Figure:
     fig = go.Figure()
     hours = df_day.index.astype(str)  # e.g., "0", "1", ..., "23"
 
@@ -247,7 +253,7 @@ def plot_example_day(df_day: pd.DataFrame, base_color: str, regular_color: str, 
     fig.update_layout(
         barmode="stack",
         xaxis_title="Hour of Day",
-        yaxis_title="Consumption (kWh)",
+        yaxis_title=f"Consumption (kWh {_get_interval_text(intervals_per_day)})".strip(),
         legend_title="Load Type",
         margin=dict(l=40, r=20, t=40, b=40),
         height=400

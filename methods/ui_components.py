@@ -751,13 +751,13 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         if st.button("Show a Different Day"):
             st.session_state.random_day = random.choice(available_dates)
             st.rerun()
-            
+        
+        intervals = get_intervals_per_day(df_filtered)
         df_day = _compute_example_day(df_filtered, st.session_state.random_day, group=False)
-
         # Ensure correct stacking order for the bar chart: Base (bottom), Regular, Peak (top).
         df_day = df_day[["Base Load", "Regular Load", "Peak Load"]]
         st.caption(f"Displaying data for {st.session_state.random_day.strftime('%A, %Y-%m-%d')} (Total: {df_day.sum().sum():.2f} kWh)")
-        example_day_fig = charts.plot_example_day(df_day, BASE_COLOR, REGULAR_COLOR, PEAK_COLOR)
+        example_day_fig = charts.plot_example_day(df_day, intervals, BASE_COLOR, REGULAR_COLOR, PEAK_COLOR)
         st.plotly_chart(example_day_fig, use_container_width=True)
         #st.bar_chart(df_day, color=[BASE_COLOR, REGULAR_COLOR, PEAK_COLOR], x_label="Hour of Day", y_label="Consumption (kWh)")
 
