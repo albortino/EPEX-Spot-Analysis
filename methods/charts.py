@@ -3,6 +3,7 @@ import plotly.graph_objects as go
 import pandas as pd
 from methods.config import FLEX_COLOR, MEKKO_BORDER, FLEX_COLOR_LIGHT, STATIC_COLOR, FLEX_COLOR_SHADE, FORECAST_PREDICTED_COLOR, FORECAST_ACTUAL_COLOR, FORECAST_UNCERTAINTY_COLOR
 import calendar
+from prophet import Prophet
 
 def get_price_chart(df: pd.DataFrame, static_price: pd.Series) -> go.Figure:
     fig = go.Figure()
@@ -188,4 +189,22 @@ def get_trend_chart(df_history: pd.DataFrame, df_forecast: pd.DataFrame) -> go.F
         showlegend=True
     )
     
+    return fig
+
+def get_seasonality_charts(model: Prophet, forecast: pd.DataFrame) -> go.Figure:
+    """Generates individual Plotly charts for each seasonality component in the Prophet model."""
+    from prophet.plot import plot_components_plotly
+    fig = plot_components_plotly(model, forecast, uncertainty=False)
+    
+    for trace in fig.data:
+        
+        # Update the line color for the main line trace
+        if trace.mode == 'lines':
+            trace.line.color = FLEX_COLOR_LIGHT
+        
+        # If there are uncertainty bands, you might want to adjust their color too
+        # Prophet's plot_components_plotly uses fill for uncertainty
+        elif trace.fill == 'tonexty': # Uncertainty bands usually have fill='tonexty'
+            trace.fillcolor = FORECAST_UNCERTAINTY_COLOR + '40' # Adding transparency
+                
     return fig

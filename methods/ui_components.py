@@ -622,6 +622,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         # Display Results
         if trend_data:
             df_daily_trend, df_forecast, trend_description, trend_metric = trend_data
+            model, _ = _fit_forecast_model(df_filtered) # We need the model for the components
 
             # Display the summary metric first, as a key insight
             with col2:
@@ -635,6 +636,13 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
             # Display the detailed chart
             trend_fig = charts.get_trend_chart(df_daily_trend, df_forecast)
             st.plotly_chart(trend_fig, use_container_width=True)
+
+            # Expander for seasonality components
+            with st.expander("Show Seasonality Details"):
+                st.markdown("These charts show the different seasonal patterns the model has learned from your data.")
+                if model:
+                    seasonality_charts = charts.get_seasonality_charts(model, df_forecast)
+                    st.plotly_chart(seasonality_charts, use_container_width=True, key=f"forecast_details")
 
         else:
             st.info("A meaningful consumption trend could not be calculated. This usually requires at least 30 days of data.")
