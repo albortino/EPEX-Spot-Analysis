@@ -13,7 +13,7 @@ from methods.logger import logger
 
 @dataclass
 class ProviderFormat:
-    """Holds the parsing configuration for a specific electricity provider's CSV format. """
+    """Holds the parsing configuration for a specific electricity provider"s CSV format. """
     name: str
     usage_col: str
     timestamp_col: str
@@ -25,7 +25,7 @@ class ProviderFormat:
     separator: str = ";"
     decimal: str = ","
     skiprows: int = 0
-    encoding: str = 'utf-8-sig'
+    encoding: str = "utf-8-sig"
     feedin: bool = False
     end_timestamp_col: Optional[str] = None
     preprocess_date_func: Optional[str] = None
@@ -51,7 +51,7 @@ class JavaScriptNetzbetreiberParser:
         providers = []
         
         # Pattern to match export const declarations
-        pattern = r'export const (\w+) = new Netzbetreiber\((.*?)\);'
+        pattern = r"export const (\w+) = new Netzbetreiber\((.*?)\);"
         matches = re.findall(pattern, js_content, re.DOTALL)
         
         for var_name, params_str in matches:
@@ -82,7 +82,7 @@ class JavaScriptNetzbetreiberParser:
         name = self._clean_string(params[0])
         usage_col = self._clean_string(params[1])
         timestamp_col = self._clean_string(params[2])
-        time_sub_col = self._clean_string(params[3]) if params[3] != 'null' else None
+        time_sub_col = self._clean_string(params[3]) if params[3] != "null" else None
         date_format_js = self._clean_string(params[4])
         
         # Convert date format
@@ -90,32 +90,32 @@ class JavaScriptNetzbetreiberParser:
         
         # Extract other fields (array)
         other_cols = []
-        if len(params) > 6 and params[6] != 'null':
+        if len(params) > 6 and params[6] != "null":
             other_cols = self._parse_array(params[6])
         
         # Extract should_skip function
         should_skip_func = None
-        if len(params) > 7 and params[7] != 'null':
+        if len(params) > 7 and params[7] != "null":
             should_skip_func = params[7]
         
         # Extract fixup_timestamp
         fixup_timestamp = False
         if len(params) > 8:
-            fixup_timestamp = params[8].strip().lower() == 'true'
+            fixup_timestamp = params[8].strip().lower() == "true"
         
         # Extract feedin flag
         feedin = False
         if len(params) > 9:
-            feedin = params[9].strip().lower() == 'true'
+            feedin = params[9].strip().lower() == "true"
         
         # Extract end timestamp descriptor
         end_timestamp_col = None
-        if len(params) > 10 and params[10] != 'null':
+        if len(params) > 10 and params[10] != "null":
             end_timestamp_col = self._clean_string(params[10])
         
         # Extract preprocess date function
         preprocess_date_func = None
-        if len(params) > 11 and params[11] != 'null':
+        if len(params) > 11 and params[11] != "null":
             preprocess_date_func = params[11]
         
         return ProviderFormat(
@@ -147,31 +147,31 @@ class JavaScriptNetzbetreiberParser:
         while i < len(params_str):
             char = params_str[i]
             
-            if char == '\\': # Escape character
+            if char == "\\": # Escape character
                     i += 1
                     continue
                 
             if not in_string:
-                if char in ['"', "'"]: # Within apostrophes
+                if char in [""", """]: # Within apostrophes
                     in_string = True
                     string_char = char
                     i += 1
                     continue
-                elif char == '(': # Within parentheses
+                elif char == "(": # Within parentheses
                     paren_depth += 1
-                elif char == ')':
+                elif char == ")":
                     paren_depth -= 1
-                elif char == '[': # Within brackets
+                elif char == "[": # Within brackets
                     bracket_depth += 1
-                elif char == ']':
+                elif char == "]":
                     bracket_depth -= 1
-                elif char == ',' and paren_depth == 0 and bracket_depth == 0:
+                elif char == "," and paren_depth == 0 and bracket_depth == 0:
                     params.append(current_param.strip())
                     current_param = ""
                     i += 1
                     continue
             else:
-                if char == string_char: # and (i == 0 or params_str[i-1] != '\\')
+                if char == string_char: # and (i == 0 or params_str[i-1] != "\\")
                     in_string = False
                     string_char = None
                     i += 1
@@ -190,9 +190,9 @@ class JavaScriptNetzbetreiberParser:
         Clean a string parameter by removing quotes.
         """
         s = s.strip()
-        #if s.startswith('"') and s.endswith('"'):
+        #if s.startswith(""") and s.endswith("""):
         #    return s[1:-1]
-        #if s.startswith("'") and s.endswith("'"):
+        #if s.startswith(""") and s.endswith("""):
         #    return s[1:-1]
         return s
     
@@ -215,10 +215,10 @@ class JavaScriptNetzbetreiberParser:
         
         for char in content:
             if not in_string:
-                if char in ['"', "'"]:
+                if char in [""", """]:
                     in_string = True
                     string_char = char
-                elif char == ',':
+                elif char == ",":
                     if current_item.strip():
                         items.append(self._clean_string(current_item.strip()))
                     current_item = ""
@@ -277,7 +277,7 @@ class ConsumptionDataParser:
     def _load_user_defined_formats(self) -> List[ProviderFormat]:
         """Loads user-defined provider formats from own_provider_formats.json."""
         try:
-            with open(self.user_formats_file, 'r', encoding='utf-8') as f:
+            with open(self.user_formats_file, "r", encoding="utf-8") as f:
                 formats_from_json = json.load(f)
             
             user_formats = [ProviderFormat(**item) for item in formats_from_json]
@@ -301,7 +301,7 @@ class ConsumptionDataParser:
             
             formats_as_dict = [asdict(fmt) for fmt in formats]
             
-            with open(self.cache_file, 'w', encoding='utf-8') as f:
+            with open(self.cache_file, "w", encoding="utf-8") as f:
                 json.dump(formats_as_dict, f, indent=4, ensure_ascii=False)
             logger.log(f"Saved {len(formats)} provider configurations to cache at {self.cache_file}", severity=1)
         except Exception as e:
@@ -310,7 +310,7 @@ class ConsumptionDataParser:
     def _load_from_cache(self) -> List[ProviderFormat]:
         """Loads provider_formats from the JSON cache file. Returns a list of formats."""
         try:
-            with open(self.cache_file, 'r', encoding='utf-8') as f:
+            with open(self.cache_file, "r", encoding="utf-8") as f:
                 formats_from_json = json.load(f)
             
             formats = [ProviderFormat(**item) for item in formats_from_json]
@@ -344,12 +344,12 @@ class ConsumptionDataParser:
             return pd.DataFrame()
 
         try:
-            if hasattr(uploaded_file, 'getvalue'):
-                file_content = uploaded_file.getvalue().decode('utf-8-sig')
+            if hasattr(uploaded_file, "getvalue"):
+                file_content = uploaded_file.getvalue().decode("utf-8-sig")
             else:
                 file_content = uploaded_file.read()
                 if isinstance(file_content, bytes):
-                    file_content = file_content.decode('utf-8-sig')
+                    file_content = file_content.decode("utf-8-sig")
         except Exception as e:
             logger.log(f"Error reading uploaded file: {e}", severity=1)
             return pd.DataFrame()
@@ -361,8 +361,8 @@ class ConsumptionDataParser:
                     logger.log(f"Successfully parsed with format: {provider_format.name}", severity=1)
                     return self._standardize_dataframe(df)
             except Exception as e:
-                # This is expected if a format doesn't match, so no log needed unless debugging.
-                # logger.log(f"Attempted format '{provider_format.name}' and failed: {e}")
+                # This is expected if a format doesn"t match, so no log needed unless debugging.
+                # logger.log(f"Attempted format "{provider_format.name}" and failed: {e}")
                 continue
         
         logger.log("No suitable parser found for the uploaded file.", severity=1)
@@ -374,7 +374,7 @@ class ConsumptionDataParser:
         """
         df = pd.read_csv(file_content_io, sep=config.separator, decimal=config.decimal,
                          skiprows=config.skiprows, encoding=config.encoding, 
-                         skipinitialspace=True, on_bad_lines='skip')
+                         skipinitialspace=True, on_bad_lines="skip")
 
         # Clean column names
         df.columns = df.columns.str.strip()
@@ -399,8 +399,7 @@ class ConsumptionDataParser:
         
         # Handle timestamp combination
         if config.time_sub_col:
-            df["timestamp_str"] = (df[config.timestamp_col].astype(str).str.strip() + 
-                                 " " + df[config.time_sub_col].astype(str).str.strip())
+            df["timestamp_str"] = (df[config.timestamp_col].astype(str).str.strip() + " " + df[config.time_sub_col].astype(str).str.strip())
         else:
             df["timestamp_str"] = df[config.timestamp_col].astype(str).str.strip()
 
@@ -409,9 +408,7 @@ class ConsumptionDataParser:
             df["timestamp_str"] = df["timestamp_str"].apply(self._apply_date_preprocessing)
 
         # Parse consumption values
-        df['consumption_kwh'] = pd.to_numeric(
-            df['consumption_kwh'].astype(str).str.replace(',', '.'), errors='coerce'
-        )
+        df["consumption_kwh"] = pd.to_numeric(df["consumption_kwh"].astype(str).str.replace(",", "."), errors="coerce")
         
         # Apply should_skip logic
         if config.should_skip_func:
@@ -421,14 +418,13 @@ class ConsumptionDataParser:
         if config.end_timestamp_col:
             df = self._filter_by_time_interval(df, config)
         
-        df.dropna(subset=['timestamp_str', 'consumption_kwh'], inplace=True)
+        df.dropna(subset=["timestamp_str", "consumption_kwh"], inplace=True)
         
         # Parse timestamps
         if config.date_format == "ISO8601":
             df["timestamp_local"] = pd.to_datetime(df["timestamp_str"])
         else:
-            df["timestamp_local"] = pd.to_datetime(df["timestamp_str"], 
-                                                 format=config.date_format, dayfirst=True)
+            df["timestamp_local"] = pd.to_datetime(df["timestamp_str"], format=config.date_format, dayfirst=True)
         
         # Apply timestamp fixup
         if config.fixup_timestamp:
@@ -440,7 +436,7 @@ class ConsumptionDataParser:
         """
         Find the usage column using exact match or fuzzy matching.
         """
-        if usage_descriptor.startswith('!'):
+        if usage_descriptor.startswith("!"):
             # Fuzzy matching
             fuzzy_match_str = usage_descriptor[1:]
             for col in columns:
@@ -464,7 +460,7 @@ class ConsumptionDataParser:
         Apply skip logic based on the function string (simplified implementation).
         """
         # This is a simplified implementation
-        # In a full implementation, you'd parse and evaluate the JavaScript function
+        # TODO: parse and evaluate the JavaScript function
         if "1.8.0" in skip_func_str:
             # Example: Skip rows where OBIS code is not "1.8.0"
             if "Obiscode" in df.columns:
@@ -489,71 +485,6 @@ class ConsumptionDataParser:
     def _standardize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Convert timestamp to UTC and standardize the output format.
-        """
-        def handle_dst_transitions(df: pd.DataFrame, timezone: str) -> pd.Series:
-            """
-            Localize 'timestamp_local' with proper DST disambiguation and convert to UTC.
-
-            Parameters:
-                df: DataFrame with a 'timestamp_local' column (naive datetime)
-                timezone: Timezone string (e.g., 'Europe/Vienna')
-
-            Returns:
-                A pandas Series with timezone-aware UTC timestamps.
-            """
-
-            # Assign alternating True/False for is_dst for duplicated times
-            dst_flags = []
-            counter = {}
-
-            for ts in df["timestamp_local"]:
-                if ts in counter:
-                    counter[ts] += 1
-                else:
-                    counter[ts] = 0
-                dst_flags.append(counter[ts] % 2 == 0)  # True, False, True, False...
-
-            df["is_dst"] = dst_flags
-
-            # Step 3: Localize using is_dst to resolve ambiguity
-            def safe_localize(row):
-                try:
-                    return row["timestamp_local"].tz_localize(timezone, ambiguous=row["is_dst"]).tz_convert("UTC")
-                except Exception:
-                    # Non-ambiguous timestamps default to standard localization
-                    return row["timestamp_local"].tz_localize(timezone).tz_convert("UTC")
-
-            return df.apply(safe_localize, axis=1)
-
-        df = df.sort_values(by='timestamp_local').reset_index(drop=True)
-        
-        if df["timestamp_local"].dt.tz is not None:
-            df["timestamp"] = df["timestamp_local"].dt.tz_convert("UTC")
-        else:
-            try:
-                # Winter/summer time may lead to errors. Therefore use workaround
-                df["timestamp"] = handle_dst_transitions(df, "Europe/Vienna")
-            except Exception as e:
-                logger.log(f"Error while localizing dataframe: {e}", severity=1)
-            
-            try:
-                df["timestamp"] = df["timestamp_local"].dt.tz_localize(self.local_timezone, ambiguous='NaT').dt.tz_convert("UTC")
-            except Exception as e:
-                logger.log(f"Error while localizing dataframe with fallback: {e}", severity=1)
-
-        # Resamples the data to hourly basis if it is not in 15 minutes (e.g. for days).
-        aggregation_level = "15min" if get_intervals_per_day(df) > 24 else "h"
-        df = df.set_index("timestamp")["consumption_kwh"].resample(aggregation_level).sum().dropna().reset_index()
-        df = df[["timestamp", "consumption_kwh"]].reset_index(drop=True)
-        
-        if df.empty:
-            logger.log(f"Error while standardizing dataframe. DataFrame is empty!")
-        
-        return df
-
-    def _standardize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Convert timestamp to UTC and standardize the output format.
         Handles DST transitions robustly.
         """
         
@@ -562,8 +493,8 @@ class ConsumptionDataParser:
             Handle DST transitions by identifying and processing different types of timestamps.
             
             Parameters:
-                df: DataFrame with a 'timestamp_local' column (naive datetime)
-                timezone_str: Timezone string (e.g., 'Europe/Vienna')
+                df: DataFrame with a "timestamp_local" column (naive datetime)
+                timezone_str: Timezone string (e.g., "Europe/Vienna")
                 
             Returns:
                 A pandas Series with timezone-aware UTC timestamps.
@@ -619,7 +550,7 @@ class ConsumptionDataParser:
             return df
         
         # Sort by timestamp to ensure proper ordering
-        df = df.sort_values(by='timestamp_local').reset_index(drop=True)
+        df = df.sort_values(by="timestamp_local").reset_index(drop=True)
         
         # Handle timezone conversion
         if df["timestamp_local"].dt.tz is not None:
@@ -629,7 +560,7 @@ class ConsumptionDataParser:
             
         else:
             # Handle naive timestamps
-            timezone_str = getattr(self, 'local_timezone', 'Europe/Vienna')
+            timezone_str = getattr(self, "local_timezone", "Europe/Vienna")
             
             try:
                 # Use our robust DST handler

@@ -3,7 +3,7 @@ import streamlit as st
 import requests
 import os
 from datetime import datetime, date
-from methods.config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, CACHE_FOLDER
+from methods.config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, CACHE_FOLDER, TODAY_IS_MAX_DATE
 from methods.file_parser import ConsumptionDataParser
 from methods.logger import logger
 
@@ -105,7 +105,7 @@ def merge_consumption_with_prices(df_consumption: pd.DataFrame, df_spot_prices: 
         direction="backward",
         tolerance=pd.Timedelta("59min")
     ).dropna()
-    
+
     # Add date column and localize timestamp for further analysis
     if not df_merged.empty:
         df_merged["timestamp"] = df_merged["timestamp"].dt.tz_convert(LOCAL_TIMEZONE)

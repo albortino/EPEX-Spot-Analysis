@@ -45,7 +45,7 @@ class Logger:
 
         if severity >= 1:
             try:
-                with open(self._get_log_filepath(), "a", encoding="utf-8") as f:
+                with open(self._get_log_filepath, "a", encoding="utf-8") as f:
                     f.write(log_message + "\n")
             except Exception as e:
                 print(f"{now} [logger.py]: CRITICAL - Failed to write to log file. Error: {e}")

@@ -2,7 +2,7 @@ import pandas as pd
 import io
 from datetime import date
 import streamlit as st
-from methods.config import MIN_DATE
+from methods.config import MIN_DATE, TODAY_IS_MAX_DATE
 
 @st.cache_data
 def to_excel(df: pd.DataFrame) -> bytes:
@@ -17,7 +17,7 @@ def to_excel(df: pd.DataFrame) -> bytes:
     return processed_data
 
 @st.cache_data(ttl=3600)
-def get_min_max_date(df: pd.DataFrame, today_as_max: bool = True) -> tuple[date, date]:
+def get_min_max_date(df: pd.DataFrame, today_as_max: bool = TODAY_IS_MAX_DATE) -> tuple[date, date]:
     """Returns the minimum and maximum dates from a DataFrame with a timestamp column."""
     min_val_date = df["timestamp"].min().date()
     if min_val_date < MIN_DATE:
@@ -27,7 +27,6 @@ def get_min_max_date(df: pd.DataFrame, today_as_max: bool = True) -> tuple[date,
         max_val_date = pd.Timestamp.today().date() + pd.Timedelta(days=1)
     else:
         max_val_date = df["timestamp"].max().date()
-    
     return min_val_date, max_val_date
 
 def get_intervals_per_day(df: pd.DataFrame) -> int:

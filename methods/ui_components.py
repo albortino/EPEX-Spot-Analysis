@@ -270,11 +270,14 @@ def _compute_price_distribution_data(df: pd.DataFrame, resolution: str) -> pd.Da
     price_agg_dict = {"spot_price_eur_kwh": [("q1", lambda x: x.quantile(0.25)), ("median", "median"), ("q3", lambda x: x.quantile(0.75))]}
     
     config = get_aggregation_config(df, resolution)
-    df_price = df.groupby(config["grouper"]).agg(price_agg_dict).dropna()
+    # Drop NA before aggregation to avoid issues with empty groups
+    df_price = df.dropna(subset=["spot_price_eur_kwh"]).groupby(config["grouper"]).agg(price_agg_dict)
     df_price.columns = ["Spot Price Q1", "Spot Price Median", "Spot Price Q3"]
     df_price.index = df_price.index.map(config["x_axis_map"])
     df_price.index.name = config["name"]
-    df_price = df_price.reindex(config["x_axis_map"].values())
+    # Reindex to ensure correct chronological order (e.g., Jan, Feb, Mar...)
+    # Then, drop any rows that are all NA, which happens for months with no data.
+    df_price = df_price.reindex(config["x_axis_map"].values()).dropna(how="all")
     return df_price
 
 @st.cache_data(ttl=3600)
@@ -475,12 +478,15 @@ def _compute_consumption_quartiles(df: pd.DataFrame, intervals_per_day: int) -> 
         resolution = "Hourly"
     
     config = get_aggregation_config(df, resolution)
-    df_consumption_quartiles = df.groupby(config["grouper"]).agg(consumption_agg_dict)
+    # Drop NA before aggregation to avoid issues with empty groups
+    df_consumption_quartiles = df.dropna(subset=["consumption_kwh"]).groupby(config["grouper"]).agg(consumption_agg_dict)
     df_consumption_quartiles.columns = ["Consumption Q1", "Consumption Median", "Consumption Q3"]
     df_consumption_quartiles.index.name = config["name"]        
     df_consumption_quartiles.index = df_consumption_quartiles.index.map(config["x_axis_map"])
-    df_consumption_quartiles = df_consumption_quartiles.reindex(config["x_axis_map"].values())
-
+    # Reindex to ensure correct chronological order (e.g., Jan, Feb, Mar...)
+    # Then, drop any rows that are all NA, which happens for months with no data.
+    df_consumption_quartiles = df_consumption_quartiles.reindex(config["x_axis_map"].values()).dropna(how="all")
+    
     return df_consumption_quartiles
 
 @st.cache_data(ttl=3600)
@@ -638,9 +644,10 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         "This chart illustrates the statistical distribution of your consumption for the selected time resolution. "
         "The solid line represents the **median (50th percentile)** consumption, while the dotted lines show the first and third Quartile.")
 
-    consumption_fig = charts.get_consumption_chart(df_consumption_day)
-    st.plotly_chart(consumption_fig, use_container_width=True)
-    
+    if not df_consumption_day.empty:
+        consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals)
+        st.plotly_chart(consumption_fig, use_container_width=True)
+        
     # Trend Visualization and Forecast
     try:
         assert day_filter == "All Days", f"Day Filter is activated. Value: {day_filter}"
@@ -814,7 +821,7 @@ def _compute_download_data(df: pd.DataFrame) -> tuple[bytes, bytes]:
     excel_spot_bytes = to_excel(excel_spot_data_df)
     
     # Prepare full analysis data for download
-    excel_full_bytes = to_excel(df)
+    excel_full_bytes = to_excel(df.drop(columns=["date", "days_in_month"]))
 
     return excel_full_bytes, excel_spot_bytes
 
