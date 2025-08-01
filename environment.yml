@@ -9,6 +9,8 @@ dependencies:
   - pandas
   - numpy
   - plotly
+  - flake8
+  - pytest
   - matplotlib
   - xlsxwriter
   - requests
