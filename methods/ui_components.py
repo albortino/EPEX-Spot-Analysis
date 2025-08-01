@@ -4,6 +4,8 @@ import random
 from datetime import date
 import numpy as np
 
+from prophet import Prophet
+
 from methods.config import *
 from methods.tariffs import Tariff, TariffManager
 from methods.utils import get_min_max_date, to_excel, get_intervals_per_day, get_aggregation_config, calculate_granular_data
@@ -100,16 +102,33 @@ def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager) -> tu
         with st.expander("Select Country", expanded=False):
             selected_country = st.selectbox(label="Select country for EPEX spot prices.", options=country_select.keys(), index=0)
             awattar_country = country_select[selected_country]
-        
-        # 2. Analysis Period Selection
+
+        # 2. Analysis Period Selection (with Reset button)
         with st.expander("Select Analysis Period", expanded=True):
             min_date, max_date = get_min_max_date(df)
-            selected_range = st.date_input("Choose a start and end date.", value=(min_date, max_date),min_value=min_date, max_value=max_date,format="DD.MM.YYYY", label_visibility="hidden")
+            
+            # This button will clear the session state for the date input
+            if st.button("Reset to Default"):
+                # Update the session state and rerun the script to apply the change
+                st.session_state.date_range_selector = (min_date, max_date)
+                st.rerun()
+
+            # The `key` parameter is crucial. It links the widget's state to st.session_state
+            selected_range = st.date_input(
+                "Choose a start and end date.",
+                value=(min_date, max_date),  # This sets the default on the first run
+                min_value=min_date,
+                max_value=max_date,
+                format="DD.MM.YYYY",
+                key="date_range_selector",  # The link to session state
+                label_visibility="collapsed"
+            )
 
         # Split into start and end dates
         if isinstance(selected_range, tuple) and len(selected_range) == 2:
             start_date, end_date = selected_range
         else:
+            # Fallback for the rare case where only one date is returned
             start_date, end_date = selected_range[0], max_date
         
         # 3. Tariff Plan Selection
@@ -299,7 +318,7 @@ def render_cost_comparison_tab(df: pd.DataFrame):
 
     with col1:
         st.subheader("Total Costs per Period")
-        st.markdown("Compare the total energy bill for both tariff types over time, including energy usage costs and monthly fees.")
+        st.markdown("Compare the total energy bill for both tariff types over time, including energy usage costs and monthly fees per period.")
         y_cols_total = ["Total Flexible Cost", "Total Static Cost"] if is_granular_data else ["Total Static Cost"]
         colors_total = [FLEX_COLOR, STATIC_COLOR] if is_granular_data else [STATIC_COLOR]
         st.line_chart(df_summary.set_index("Period"), y=y_cols_total, y_label="Total Cost (€)", color=colors_total)
@@ -307,7 +326,7 @@ def render_cost_comparison_tab(df: pd.DataFrame):
     with col2:
         # Learning: dots, € signs etc. in column names lead to errors
         st.subheader("Average Price per kWh")
-        st.markdown("See the effective price per kWh after accounting for both variable costs and fixed fees.")
+        st.markdown("See the effective price per kWh after accounting for both variable costs and fixed fees per period.")
         df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
         
         if is_granular_data:
@@ -352,7 +371,7 @@ def render_cost_comparison_tab(df: pd.DataFrame):
     st.text("Total and average values for all periods.")
     st.dataframe(totals_html, hide_index=True, use_container_width=True)
 
-# --- Tab: Usage Pattern Analysis ---
+# --- Tab: Usage Patterns ---
 
 @st.cache_data(ttl=3600)
 def _compute_usage_profile_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -426,9 +445,7 @@ def _compute_example_day(df: pd.DataFrame, random_day, group: bool = False) -> p
                 .sum())
         else:
             df_hour = df_hour.set_index("timestamp")[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
-        
-        #df_hour = df_hour[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
-        
+                
         df_hour = df_hour.rename(columns={
                 "base_load_kwh": "Base Load",
                 "regular_load_kwh": "Regular Load",
@@ -439,66 +456,109 @@ def _compute_example_day(df: pd.DataFrame, random_day, group: bool = False) -> p
     else:
         return pd.DataFrame()
     
-@st.cache_data(ttl=3600)
-def _compute_consumption_trend_and_forecast(df: pd.DataFrame):
-    """
-    Analyzes the daily consumption trend using linear regression and forecasts the next 90 days.
-    Caches the result for performance.
-    """
-    logger.log("Computing Consumption Trend and Forecast")
+st.cache_resource(ttl=3600, show_spinner=True)
+def _fit_forecast_model(df: pd.DataFrame) -> tuple[Prophet|None, pd.DataFrame]:
+    """Fits the Prophet model on provided data. Prophet doc: https://facebook.github.io/prophet/."""
     
-    # Resample to daily consumption data to get a clearer trend
-    if 'timestamp' not in df.columns:
-        return None
-    df_daily = df.resample('D', on='timestamp')['consumption_kwh'].sum().reset_index()
-    df_daily = df_daily[df_daily['consumption_kwh'] > 0.01]  # Remove days with no or negligible consumption
+    if "timestamp" not in df.columns:
+        return None, pd.DataFrame()
     
-    # We need at least 30 days of data for a meaningful trend analysis
-    if len(df_daily) < 30:
-        return None
-        
-    # Convert dates to numerical values for regression
-    df_daily['time_ordinal'] = df_daily['timestamp'].apply(lambda x: x.toordinal())
-    
-    # --- Trend Calculation using Linear Regression ---
-    slope, intercept = np.polyfit(df_daily['time_ordinal'], df_daily['consumption_kwh'], 1)
-    df_daily['trend'] = slope * df_daily['time_ordinal'] + intercept
-    df_daily['trend'] = df_daily['trend'].clip(0)  # Consumption cannot be negative
+    # Resample to daily data and format for Prophet ("ds", "y")
+    df_daily = df.resample("D", on="timestamp")["consumption_kwh"].sum().reset_index().copy()
+    df_daily["timestamp"] = df_daily["timestamp"].dt.tz_localize(None)
+    df_daily = df_daily.rename(columns={"timestamp": "ds", "consumption_kwh": "y"})
+    df_daily.loc[df_daily["y"] == 0, "y"] = pd.NA
 
-    # --- Forecast Calculation for the next 90 days ---
-    forecast_days = 90
-    last_date = df_daily['timestamp'].max()
-    future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=forecast_days)
-    future_ordinals = np.array([d.toordinal() for d in future_dates])
+    # Prophet requires a minimum of 2 data points, but more is needed for seasonality.
+    if len(df_daily) < 30:
+        return None, pd.DataFrame()
+
+    # Outliers
+    absence_days = pd.DataFrame({
+        "holiday": "absence",
+        "ds": df_daily[df_daily["y"] == 0]["ds"],
+        "lower_window": 0, # No days to extend
+        "upper_window": 0,
+        }
+    )
     
-    forecast_values = (slope * future_ordinals + intercept).clip(0)
-    df_forecast = pd.DataFrame({'timestamp': future_dates, 'forecast': forecast_values})
+    holidays = pd.concat([absence_days], ignore_index=True)
     
-    # --- Trend Analysis for Summary Text ---
-    start_trend = df_daily['trend'].iloc[0]
-    end_trend = df_daily['trend'].iloc[-1]
+    # Configure and train the Prophet model.
+    # Check for at least a year for yearly seasonality, otherwise disable it.
+    use_yearly_seasonality = len(df_daily) >= 365
     
-    # Calculate percentage change relative to the average consumption to get a stable metric
-    avg_consumption = df_daily['consumption_kwh'].mean()
+    model = Prophet(holidays=holidays, yearly_seasonality=use_yearly_seasonality)
+    model.add_country_holidays(country_name="AT")
+    
+    if not use_yearly_seasonality:
+        model.add_seasonality(name="monthly", period=30.5, fourier_order=5)
+    
+    #model.add_regressor("spot_price_eur_kwh")
+    model.fit(df_daily)
+    
+    return model, df_daily
+
+@st.cache_data(ttl=3600)
+def _compute_percent_change(df_daily: pd.DataFrame, forecast: pd.DataFrame) -> float:
+    """Computes the percentage change of a DataFrame with daily values by the incline of a linear regression model. """
+    logger.log("Computing Percent Change")
+    # Analyze the underlying trend from the model"s components. Isolate the trend component within the historical data range
+    historical_trend = forecast[forecast['ds'].isin(df_daily['ds'])]['trend']
+    
+    # Prepare data for regression: x is time, y is the trend value
+    x_values = np.arange(len(historical_trend))
+    y_values = historical_trend.values
+    
+    # Fit a 1st-degree polynomial (linear regression) and get the slope which represents the average daily change in the trend.
+    slope, _ = np.polyfit(x_values, y_values, 1)
+    
+    # Calculate the total change over the period based on this average slope
+    total_change_over_period = slope * len(historical_trend)
+
+    # Calculate percentage change relative to the average consumption for a stable metric
+    avg_consumption = df_daily['y'].mean()
     if avg_consumption > 0:
-        total_change_over_period = end_trend - start_trend
         percent_change = (total_change_over_period / avg_consumption) * 100
     else:
         percent_change = 0
+    
+    return percent_change
+
+
+@st.cache_data(ttl=3600)
+def _compute_consumption_trend_and_forecast(df: pd.DataFrame, forcast_periods: int = 90):
+    """ Analyzes and forecasts daily consumption using Prophet to account for seasonality.  """
+    logger.log("Computing Consumption Trend and Forecast with Prophet")
+    
+    model, df_daily = _fit_forecast_model(df)
+    if model is None:
+        return None
+
+    # Create a future dataframe and make a forecast
+    future = model.make_future_dataframe(periods=forcast_periods, freq="D")
+    forecast = model.predict(future)
+
+    # Clean the forecast data by ensuring that consumption predictions do not fall below zero.
+    for col in ["yhat", "yhat_lower", "yhat_upper", "trend"]:
+        if col in forecast.columns:
+            forecast[col] = forecast[col].clip(0)
+            
+    percent_change = _compute_percent_change(df_daily, forecast)
 
     # Classify the trend
-    if abs(percent_change) < 5:
+    if abs(percent_change) < THRESHOLD_STABLE_TREND:
         trend_description = "Stable"
     elif percent_change > 0:
         trend_description = "Increasing"
     else:
         trend_description = "Decreasing"
         
-    return df_daily, df_forecast, trend_description, percent_change
+    return df_daily, forecast, trend_description, percent_change
 
 
 def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_threshold: float):
-    """Renders the content for the 'Usage Pattern Analysis' tab."""
+    """Renders the content for the 'Usage Patterns' tab."""
     
     # Allow filtering by day type
     df_filtered = df[df["consumption_kwh"] > 0].copy()
@@ -517,45 +577,76 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
     df_consumption_day = _compute_consumption_quartiles(df_filtered, intervals)
     
     st.subheader("Consumption Over Time")
+    
+    # Daily Consumption with Quartiles
     st.markdown("#### Daily Consumption\n"
         "This chart illustrates the statistical distribution of your consumption for the selected time resolution. "
-        "The solid line represents the **median (50th percentile)** consumption, while the dotted lines show the first and third Quartile."
-    )
+        "The solid line represents the **median (50th percentile)** consumption, while the dotted lines show the first and third Quartile.")
 
     consumption_fig = charts.get_consumption_chart(df_consumption_day)
     st.plotly_chart(consumption_fig, use_container_width=True)
     
+    # Trend Visualization and Forecast
     try:
-        trend_data = _compute_consumption_trend_and_forecast(df_filtered)
+        assert day_filter == "All Days", f"Day Filter is activated. Value: {day_filter}"
 
-        markdown_text = """#### Consumption Trend & Forecast\n"
-            "The chart below analyzes the trend in your daily consumption over the selected period using a simple linear regression. "
-            "It also provides a forecast for the next 3 months to give you an idea of where your usage might be heading."""
+        st.subheader("Consumption Trend & Forecast")
+        st.markdown(
+            "This chart analyzes the underlying trend in your daily consumption using a seasonal model "
+            "and provides a forecast for future usage. Use the slider below to adjust the forecast period."
+            "\n**Important**: Consider **excluding days of absence** in the sidebar for more robust predictions!"
+        )
 
+        col1, _, _, col2 = st.columns(4) # Use 4 columns such that the metric is on the very right of the screen.
+
+        # Configuration for the forecast.
+        with col1:
+            days_in_dataset = (df_filtered["timestamp"].max() - df_filtered["timestamp"].min()).days
+            
+            # Set the default value for the slider based on the number of days in the dataset
+            max_value = 365
+            if days_in_dataset < 90: 
+                value = 30
+                
+            elif days_in_dataset < 365:
+                value = 90
+            else:
+                value = 180
+                max_value = 365*2
+            
+            forecast_days = st.slider("Days to Forecast", min_value=30, max_value=max_value, value=value, step=10, key="forecast_days", width=300)
+
+        # Calculation the trend data. The fitted model is cached such that only the forecast is recomputed (efficient!).
+        trend_data = _compute_consumption_trend_and_forecast(df_filtered, forecast_days)
+
+        # Display Results
         if trend_data:
             df_daily_trend, df_forecast, trend_description, trend_metric = trend_data
 
-            # Create and display the trend chart
-            st.markdown(markdown_text)
-            
-            # Display trend metric as a summary
-            st.metric(
-                label="Consumption Trend", 
-                value=trend_description, 
-                delta=f"{trend_metric:.1f}% change over period",
-                delta_color=("inverse" if trend_metric < 0 else "normal")
-            )
+            # Display the summary metric first, as a key insight
+            with col2:
+                st.metric(label="Underlying Consumption Trend",
+                    value=trend_description,
+                    delta=f"{trend_metric:.1f}% change over period",
+                    delta_color=("inverse" if trend_metric < 0 else "normal"),
+                    label_visibility="hidden"
+                )
 
+            # Display the detailed chart
             trend_fig = charts.get_trend_chart(df_daily_trend, df_forecast)
             st.plotly_chart(trend_fig, use_container_width=True)
+
         else:
-            st.markdown(markdown_text)
             st.info("A meaningful consumption trend could not be calculated. This usually requires at least 30 days of data.")
-            
+
+    except AssertionError as e:
+        logger.log(f"Error in Forecasting: {e}", severity=1)
+
     except (KeyError, ValueError) as e:
-        logger.log(f"{e}", severity=1)
-        
-    
+        logger.log(f"Error in Forecasting: {e}", severity=1)
+        st.error("An error occurred while generating the forecast. Please check the data or try a different period.")
+
+            
     # Only show the detailed analysis when consumption data includes 15 minutes intervals.
     if intervals <= 24: # Hourly data or less
         st.info("Please provide data with 15-minute intervals for a more detailed usage profile analysis.")
@@ -712,14 +803,14 @@ def render_faq_tab():
         st.markdown("""
         - **Format**: A CSV file containing your electricity consumption.
         - **Required Columns**: The file must contain at least a timestamp and a consumption value (in kWh). The parser is designed to automatically detect formats from many providers.
-        - **Granularity**: For the best results, especially for the *Usage Pattern Analysis*, data with **15-minute intervals** is recommended. Hourly data also works well. Daily data will have limited analysis capabilities.
+        - **Granularity**: For the best results, especially for the *Usage Patterns*, data with **15-minute intervals** is recommended. Hourly data also works well. Daily data will have limited analysis capabilities.
         - **Getting Your Data**: Check your electricity provider's online portal. Many allow you to download your historical consumption data. The link in the sidebar provides more tips.
         - **Privacy**: The app does not store your data, but when deployed on a public server, the file is temporarily uploaded. It's recommended to anonymize personal information (like names or meter IDs) in the file before uploading, but do not delete the columns.
         """)
 
     with st.expander("What do the different 'load types' mean?"):
         st.markdown("""
-        The *Usage Pattern Analysis* tab classifies your consumption into three types:
+        The *Usage Patterns* tab classifies your consumption into three types:
         - **Base Load**: The continuous, minimum level of power your household consumes, even when you're asleep or away (e.g., refrigerator, standby devices). It's calculated by finding the most stable, low-consumption period each day.
         - **Regular Load**: The variable, everyday consumption above your base load (e.g., lights, cooking, TV).
         - **Peak Load**: Significant, short-term spikes in consumption, typically from high-power appliances like electric vehicle chargers, heat pumps, or washing machines. The analysis identifies these based on sharp increases in usage that are sustained above a high threshold.

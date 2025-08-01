@@ -17,13 +17,16 @@ def to_excel(df: pd.DataFrame) -> bytes:
     return processed_data
 
 @st.cache_data(ttl=3600)
-def get_min_max_date(df: pd.DataFrame) -> tuple[date, date]:
+def get_min_max_date(df: pd.DataFrame, today_as_max: bool = True) -> tuple[date, date]:
     """Returns the minimum and maximum dates from a DataFrame with a timestamp column."""
     min_val_date = df["timestamp"].min().date()
     if min_val_date < MIN_DATE:
         min_val_date = MIN_DATE
         
-    max_val_date = df["timestamp"].max().date()
+    if today_as_max:
+        max_val_date = pd.Timestamp.today().date() + pd.Timedelta(days=1)
+    else:
+        max_val_date = df["timestamp"].max().date()
     
     return min_val_date, max_val_date
 

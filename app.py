@@ -61,7 +61,7 @@ def main():
     tab_options = [
         "Spot Price Analysis", 
         "Cost Comparison", 
-        "Usage Pattern Analysis", 
+        "Usage Patterns", 
         "Yearly Summary", 
         "Download Data",
         "FAQ & Help"
@@ -88,7 +88,7 @@ def main():
     elif st.session_state.active_tab == "Cost Comparison":
         ui_components.render_cost_comparison_tab(df_analysis)
     
-    elif st.session_state.active_tab == "Usage Pattern Analysis":
+    elif st.session_state.active_tab == "Usage Patterns":
         ui_components.render_usage_pattern_tab(df_analysis, base_threshold, peak_threshold)
     
     elif st.session_state.active_tab == "Yearly Summary":

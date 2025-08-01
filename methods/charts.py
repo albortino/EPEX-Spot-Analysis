@@ -1,7 +1,7 @@
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
-from methods.config import FLEX_COLOR, MEKKO_BORDER, FLEX_COLOR_LIGHT, STATIC_COLOR, FLEX_COLOR_SHADE
+from methods.config import FLEX_COLOR, MEKKO_BORDER, FLEX_COLOR_LIGHT, STATIC_COLOR, FLEX_COLOR_SHADE, FORECAST_PREDICTED_COLOR, FORECAST_ACTUAL_COLOR, FORECAST_UNCERTAINTY_COLOR
 import calendar
 
 def get_price_chart(df: pd.DataFrame, static_price: pd.Series) -> go.Figure:
@@ -139,43 +139,53 @@ def get_marimekko_chart(df: pd.DataFrame, border_color: str = "#FFFFFF") -> go.F
     return fig
 
 
-def get_trend_chart(df_daily_trend: pd.DataFrame, df_forecast: pd.DataFrame) -> go.Figure:
-    """Creates a line chart showing daily consumption, its trend, and a forecast."""
-    
+def get_trend_chart(df_history: pd.DataFrame, df_forecast: pd.DataFrame) -> go.Figure:
+    """Creates a chart to visualize the Prophet forecast, including historical data, the forecast line, and the uncertainty interval. """
     fig = go.Figure()
 
-    # Add historical daily consumption
+    # Add the uncertainty interval (shaded area)
     fig.add_trace(go.Scatter(
-        x=df_daily_trend['timestamp'], 
-        y=df_daily_trend['consumption_kwh'],
-        mode='lines',
-        name='Daily Consumption',
-        line=dict(color='#1f77b4', width=1.5),
-        opacity=0.7
+        x=df_forecast["ds"],
+        y=df_forecast["yhat_upper"],
+        mode="lines",
+        line=dict(width=0),
+        fillcolor=FORECAST_UNCERTAINTY_COLOR,
+        name="Uncertainty Interval Low",
+        showlegend=False
     ))
-
-    # Add the calculated trendline
     fig.add_trace(go.Scatter(
-        x=df_daily_trend['timestamp'],
-        y=df_daily_trend['trend'],
-        mode='lines',
-        name='Trendline',
-        line=dict(color='#ff7f0e', width=3)
+        x=df_forecast["ds"],
+        y=df_forecast["yhat_lower"],
+        mode="lines",
+        line=dict(width=0),
+        fillcolor=FORECAST_UNCERTAINTY_COLOR,
+        fill="tonexty",
+        name="Uncertainty Interval",
     ))
     
-    # Add the forecast line
+    # Add the historical actual consumption
     fig.add_trace(go.Scatter(
-        x=df_forecast['timestamp'],
-        y=df_forecast['forecast'],
-        mode='lines',
-        name='Forecast',
-        line=dict(color='#d62728', width=3, dash='dash')
+        x=df_history["ds"], 
+        y=df_history["y"],
+        mode="markers",
+        marker=dict(size=4, color=FORECAST_ACTUAL_COLOR),
+        name="Daily Consumption (Actual)"
+    ))
+    
+    # Add the main forecast line
+    fig.add_trace(go.Scatter(
+        x=df_forecast["ds"],
+        y=df_forecast["yhat"],
+        mode="lines",
+        name="Forecast",
+        line=dict(color=FLEX_COLOR, width=3)
     ))
 
     fig.update_layout(
         xaxis_title="Date",
         yaxis_title="Consumption (kWh)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        showlegend=True
     )
     
     return fig
