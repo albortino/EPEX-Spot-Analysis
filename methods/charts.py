@@ -41,7 +41,7 @@ def get_heatmap(df: pd.DataFrame) -> go.Figure:
     month_names = [calendar.month_name[m] for m in month_numbers]
 
     fig.update_yaxes(
-        tickvals=list(range(len(month_numbers))),
+        tickvals=month_numbers,
         ticktext=month_names
     )
 
