@@ -55,6 +55,8 @@ def render_upload_file():
         
         if not uploaded_file_widget:
             st.caption("For best results, your data should have 15-minute or hourly intervals.")
+        else:
+            st.session_state["file_uploader"] = uploaded_file_widget
 
     return st.session_state.get("file_uploader")
 
