@@ -1,4 +1,4 @@
-name: epex-spot-analysis
+name: epex-spot-sl
 channels:
   - defaults
   - conda-forge
