@@ -14,16 +14,14 @@ st.set_page_config(layout="wide")
 def main():
     
     # Instantiate managers once
-    tariff_manager = TariffManager("tariffs_flexible.json", "tariffs_static.json")
+    tariff_manager = TariffManager("resources/tariffs_flexible.json", "resources/tariffs_static.json")
 
     # --- File Upload and Initial Data Processing ---
     uploaded_file = ui_components.render_upload_file()
+    ui_components.render_language_selection()
 
     if not uploaded_file:
-        st.markdown("## Electricity Tariff Comparison Dashboard\n\nAnalyze your consumption, compare flexible vs. static tariffs, and understand your usage patterns.")
-        st.markdown("### Introduction\nThis project was influenced by https://awattar-backtesting.github.io/, which provides a simple and effective overview. This tool provides further insights into your consumption behavior and help you to choose the most economic tariff plan. For a detailed description and explanation please refer to this project's [Read Me](https://github.com/albortino/EPEX-Spot-Analysis/blob/main/readme.md).\n\n"
-                   "IMPORTANT: File uploads are in fact uploaded to a server when the app is running on Steamlit Cloud. Even though no file is stored by this script, others might have access to it!")
-        st.info("👋 Welcome! Please upload your consumption data to begin.")
+        ui_components.render_intro()
         ui_components.render_footer()
         return
 

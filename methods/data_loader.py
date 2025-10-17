@@ -3,7 +3,7 @@ import streamlit as st
 import requests
 import os
 from datetime import datetime, date
-from methods.config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, CACHE_FOLDER, TODAY_IS_MAX_DATE
+from methods.config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, CACHE_FOLDER
 from methods.file_parser import ConsumptionDataParser
 from methods.logger import logger
 
@@ -37,7 +37,8 @@ def _fetch_spot_data(country: str, start: date, end: date, cache_filename: str) 
 
         df = pd.DataFrame(data)
         df["timestamp"] = pd.to_datetime(df["start_timestamp"], unit="ms", utc=True)
-        df["spot_price_eur_kwh"] = df["marketprice"] / 1000 * 1.2  # Convert Eur/MWh to Eur/kWh and add 20% VAT
+        VAT_FACTOR = 1.2 if country == "at" else 1.19
+        df["spot_price_eur_kwh"] = df["marketprice"] / 1000 * VAT_FACTOR  # Convert Eur/MWh to Eur/kWh and add 20% VAT
         df_to_return = df[["timestamp", "spot_price_eur_kwh"]]
         
         df_to_return.to_csv(cache_filename, index=False)
@@ -74,7 +75,7 @@ def get_spot_data(country: str, start: date, end: date) -> pd.DataFrame:
 # --- Consumption Data Handling ---
 
 @st.cache_data(ttl=3600)
-def process_consumption_data(uploaded_file, aggregation_level: str = "h") -> pd.DataFrame:
+def process_consumption_data(uploaded_file) -> pd.DataFrame:
     """Loads and processes the user's consumption CSV using the dedicated parser."""
     if uploaded_file is None:
         return pd.DataFrame()

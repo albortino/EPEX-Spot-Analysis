@@ -27,9 +27,9 @@ def get_price_chart(df: pd.DataFrame, static_price: pd.Series) -> go.Figure:
     # Second trace: Q3 (upper bound), filled to previous (Q1)
     fig.add_trace(go.Scatter( x=df.index, y=df["Spot Price Q3"], mode="lines", line=dict(width=0), fill="tonexty", fillcolor=FLEX_COLOR_SHADE, name="Q1–Q3 Range", showlegend=False))
 
-    # Q3 and Q1 Dotted Lines with Median in between
+    # Q3 and Q1 Dotted Lines with Mean in between
     fig.add_trace(go.Scatter(x=df.index, y=df["Spot Price Q3"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR_LIGHT), name="3rd Quartile (Q3)"))
-    fig.add_trace(go.Scatter( x=df.index, y=df["Spot Price Median"], mode="lines", line=dict(color=FLEX_COLOR, width=3), name="Median Price"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["Spot Price Mean"], mode="lines", line=dict(color=FLEX_COLOR, width=3), name="Mean Price"))
     fig.add_trace(go.Scatter(x=df.index, y=df["Spot Price Q1"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR_LIGHT), name="1st Quartile (Q1)"))
 
     # Static Price

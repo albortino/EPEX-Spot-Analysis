@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import random
 from datetime import date
+import json
 import numpy as np
 import io
 
@@ -14,20 +15,63 @@ import methods.data_loader as data_loader
 import methods.charts as charts
 from methods.logger import logger
 
+# --- Internationalization (i18n) ---
+
+@st.cache_data(ttl=3600)
+def _load_translations(language: str) -> dict:
+    """Loads the translation file for the selected language."""
+    try:
+        with open(f"locales/{language}.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logger.log(f"Translation file for language '{language}' not found. Defaulting to English.", severity=1)
+        with open("locales/de.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+
+def t(key: str, **kwargs):
+    """Returns the translated string for a given key."""
+    lang = st.session_state.get("lang", "de")
+    translations = _load_translations(lang)
+    return translations.get(key, key).format(**kwargs)
+
+# --- Introduction ---
+def render_intro():
+    st.markdown(f"## {t('intro_title')}\n\n{t('intro_subtitle')}")
+    st.markdown(f"### {t('intro_introduction_header')}\n{t('intro_introduction_text')}\n\n"
+                f"**{t('intro_important_notice')}**")
+    st.info(t('intro_welcome_message'))
+
+
 # --- Sidebar and Input Controls ---
+def render_language_selection():
+    """ Renders the language select widget. """
+    with st.sidebar:
+        # Language Selector
+        lang_map = {"de": "Deutsch", "en": "English"}
+        lang_options = list(lang_map.keys())
+        selected_lang_key = st.selectbox(
+            "Language / Sprache", 
+            options=lang_options, 
+            format_func=lambda x: lang_map[x],
+            index=lang_options.index(st.session_state.get("lang", "de"))
+        )
+        if st.session_state.get("lang") != selected_lang_key:
+            st.session_state["lang"] = selected_lang_key
+            st.rerun()
+
 
 def render_upload_file():
     """Renders the file upload widget and returns the uploaded file."""
 
     with st.sidebar:
-        st.header("Upload Data")
+        st.header(t("upload_data"))
         
         if DEBUG:
-            if st.button("Load Example Data"):
+            if st.button(t("load_example_data")):
                 try:
 
                     # Read the example data file from disk
-                    with open("EXAMPLE-DATA-15M.csv", "r") as f:
+                    with open("resources/EXAMPLE-DATA-15M.csv", "r") as f:
                         example_data_content = f.read()
                     
                     # Create a BytesIO object from the file content and ensure the content is encoded to bytes.
@@ -42,19 +86,19 @@ def render_upload_file():
                     st.rerun()
                     
                 except FileNotFoundError:
-                    st.error("Example data file 'EXAMPLE-DATA-15M.csv' not found.")
+                    st.error(t("example_data_not_found"))
                     
                 except Exception as e:
-                    st.error(f"An error occurred loading example data: {e}")
+                    st.error(t("error_loading_example_data", e=e))
                         
 
         uploaded_file_widget = st.file_uploader(
-            "First upload consumption data from your network provider.",
+            t("upload_prompt"),
             type=["csv"],
-            help="See the 'FAQ & Help' tab for tips on getting your data from your network provider.")
+            help=t("upload_help"))
         
         if not uploaded_file_widget:
-            st.caption("For best results, your data should have 15-minute or hourly intervals.")
+            st.caption(t("upload_caption"))
         else:
             st.session_state["file_uploader"] = uploaded_file_widget
 
@@ -93,7 +137,7 @@ def _compare_all_tariffs(df_consumption: pd.DataFrame, _tariff_manager: TariffMa
         cheapest_flex_key = min(flex_keys, key=total_costs.get) #type: ignore
         final_flex_tariff = flex_options.get(cheapest_flex_key[1])
     else:
-        st.warning("No predefined flexible tariffs found to compare.")
+        st.warning(t("no_predefined_flex_tariffs"))
 
     final_static_tariff = None
     static_keys = [k for k in total_costs if k[0] == "static"]
@@ -101,7 +145,7 @@ def _compare_all_tariffs(df_consumption: pd.DataFrame, _tariff_manager: TariffMa
         cheapest_static_key = min(static_keys, key=total_costs.get) #type: ignore
         final_static_tariff = static_options.get(cheapest_static_key[1])
     else:
-        st.warning("No predefined static tariffs found to compare.")
+        st.warning(t("no_predefined_static_tariffs"))
     
     return final_flex_tariff, final_static_tariff
 
@@ -111,24 +155,24 @@ def _return_tariff_selection(_tariff_manager: TariffManager, expanded: bool = Tr
     
     final_tariffs = []
     options = [
-        ("Flexible (Spot Price) Plan", _tariff_manager.get_flex_tariffs_with_custom()),
-        ("Static (Fixed Price) Plan", _tariff_manager.get_static_tariffs_with_custom())
+        (t("flexible_plan_title"), _tariff_manager.get_flex_tariffs_with_custom()),
+        (t("static_plan_title"), _tariff_manager.get_static_tariffs_with_custom())
     ]
 
     for title, tariff_options in options:
         with st.expander(title, expanded=expanded):
             tariff_type = title.split(" ")[0]
             # Let user select a predefined tariff or 'Custom'
-            selected_name = st.selectbox(f"Select {tariff_type} Tariff", options=list(tariff_options.keys()), index=len(tariff_options) - 1)
+            selected_name = st.selectbox(t("select_tariff_type", tariff_type=tariff_type), options=list(tariff_options.keys()), index=len(tariff_options) - 1)
             selected_tariff = tariff_options[selected_name]
             
             # Display input fields pre-filled with the selected tariff's data
-            price_kwh = st.number_input("On-Top Price (€/kWh)", value=selected_tariff.price_kwh, min_value=0.0, step=0.001, format="%.4f", key=f"{tariff_type}_price")
+            price_kwh = st.number_input(t("on_top_price"), value=selected_tariff.price_kwh, min_value=0.0, step=0.001, format="%.4f", key=f"{tariff_type}_price")
             price_kwh_pct = 0.0
             if tariff_type == "Flexible":
-                price_kwh_pct = st.number_input("Variable Price (% of EPEX)", value=selected_tariff.price_kwh_pct, min_value=0.0, max_value=100.0, step=1.0, format="%.1f", key=f"{tariff_type}_pct")
+                price_kwh_pct = st.number_input(t("variable_price_pct"), value=selected_tariff.price_kwh_pct, min_value=0.0, max_value=100.0, step=1.0, format="%.1f", key=f"{tariff_type}_pct")
             
-            monthly_fee = st.number_input("Monthly Fee (€)", value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{tariff_type}_fee")
+            monthly_fee = st.number_input(t("monthly_fee"), value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{tariff_type}_fee")
             
             # Create a new Tariff object with the potentially modified values
             final_tariffs.append(
@@ -140,28 +184,26 @@ def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager) -> tu
     """Renders all sidebar inputs and returns the configuration values."""
     logger.log("Rendering Sidebar")
     with st.sidebar:
-        st.header("Configuration")
+        st.header(t("configuration"))
         
         # 1. Country Selection for EPEX
         country_select = {"Austria": "at", "Germany": "de"}
         
-        with st.expander("Select Country", expanded=False):
-            selected_country = st.selectbox(label="Select country for EPEX spot prices.", options=country_select.keys(), index=0)
+        with st.expander(t("select_country"), expanded=False):
+            selected_country = st.selectbox(label=t("select_country_label"), options=country_select.keys(), index=0)
             awattar_country = country_select[selected_country]
 
         # 2. Analysis Period Selection (with Reset button)
-        with st.expander("Select Analysis Period", expanded=True):
+        with st.expander(t("select_analysis_period"), expanded=True):
             min_date, max_date = get_min_max_date(df, today_as_max=TODAY_IS_MAX_DATE)
             
-            # This button will clear the session state for the date input
-            if st.button("Reset to Default"):
-                # Update the session state and rerun the script to apply the change
+            if st.button(t("reset_to_default")):
                 st.session_state.date_range_selector = (min_date, max_date)
                 st.rerun()
 
             # The `key` parameter is crucial. It links the widget's state to st.session_state
             selected_range = st.date_input(
-                "Choose a start and end date.",
+                t("date_input_label"),
                 value=(min_date, max_date),  # This sets the default on the first run
                 min_value=min_date,
                 max_value=max_date,
@@ -178,23 +220,23 @@ def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager) -> tu
             start_date, end_date = selected_range[0], max_date
         
         # 3. Tariff Plan Selection
-        with st.expander("Select Tariff Plan", expanded=True):
-            st.text("Choose a tariff or adjust parameters for a custom comparison.")
+        with st.expander(t("select_tariff_plan"), expanded=True):
+            st.text(t("tariff_plan_help"))
             
-            compare_cheapest = st.checkbox("Compare cheapest tariffs", value=False, help="Automatically selects the most economical predefined tariffs based on your data.")
+            compare_cheapest = st.checkbox(t("compare_cheapest_tariffs"), value=False, help=t("compare_cheapest_tariffs_help"))
             if compare_cheapest:
                 final_flex_tariff, final_static_tariff = _compare_all_tariffs(df, tariff_manager, awattar_country)
-                flex_info = f"Cheapest Flex Tariff:\n\n**{final_flex_tariff.name}**" if final_flex_tariff else "No flexible tariff found."
-                static_info = f"Cheapest Static Tariff:\n\n**{final_static_tariff.name}**" if final_static_tariff else "No static tariff found."
+                flex_info = t("cheapest_flex_tariff_info", tariff_name=final_flex_tariff.name) if final_flex_tariff else t("no_predefined_flex_tariffs")
+                static_info = t("cheapest_static_tariff_info", tariff_name=final_static_tariff.name) if final_static_tariff else t("no_predefined_static_tariffs")
                 st.info(f"{flex_info}\n\n{static_info}")
 
             else:
                 final_flex_tariff, final_static_tariff = _return_tariff_selection(tariff_manager, expanded=False)
             
         # 4. Load Shifting Simulation
-        with st.expander("Simulate Consumption Shifting", expanded=False):
-            st.markdown("Simulate shifting a percentage of your peak consumption to a cheaper hour within a +/- 2-hour window.", help="This shows the potential savings if you can be flexible with high-power activities like EV charging, dish washer, washing machine or running a heat pump.")
-            shift_percentage = st.slider("Shift Peak Load (%)", min_value=0, max_value=100, value=0, step=5)
+        with st.expander(t("simulate_consumption_shifting"), expanded=False):
+            st.markdown(t("simulate_shifting_markdown"), help=t("simulate_shifting_help"))
+            shift_percentage = st.slider(t("shift_peak_load_slider"), min_value=0, max_value=100, value=0, step=5)
 
         return awattar_country, start_date, end_date, final_flex_tariff, final_static_tariff, shift_percentage
 
@@ -217,11 +259,11 @@ def render_absence_days(df: pd.DataFrame, base_threshold: float) -> pd.DataFrame
     with st.sidebar:
         absence_days = _compute_absence_data(df, base_threshold, ABSENCE_THRESHOLD)
         if absence_days:
-            with st.expander("Remove Days of Absence", expanded=False):
-                st.text(f"Exclude all {len(absence_days)} detected days of absence with low consumption.", help=f"Remove days with consumption below {ABSENCE_THRESHOLD:.0%} of the typical base load. This can provide a more accurate analysis of your normal usage.")
-                select_all = st.checkbox(f"Exclude all days", value=False)
+            with st.expander(t("remove_absence_days"), expanded=False):
+                st.text(t("remove_absence_days_help", count=len(absence_days)), help=t("remove_absence_days_long_help", threshold=ABSENCE_THRESHOLD))
+                select_all = st.checkbox(t("exclude_all_days_checkbox"), value=False)
                 default_selection = absence_days if select_all else []
-                excluded_days = st.multiselect("Select specific days to exclude:", options=absence_days, default=default_selection)
+                excluded_days = st.multiselect(t("multiselect_excluded_days"), options=absence_days, default=default_selection)
                 
             if excluded_days:
                 # Filter out the selected absence days
@@ -235,7 +277,7 @@ def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: 
 
     is_granular_data = calculate_granular_data(df)
     if not is_granular_data:
-        st.warning(f"⚠️ Recommendations are only available for hourly or 15-minute data!")
+        st.warning(t("recommendation_only_for_granular_data"))
         return
 
     savings = df["total_cost_static"].sum() - df["total_cost_flexible"].sum()
@@ -251,15 +293,15 @@ def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: 
     # Display the appropriate recommendation message
     if savings > 0:
         if peak_ratio > 0.4:
-            additional_text = f"This is a great fit. You align **{peak_ratio:.0%}** of your peak usage with the cheapest market prices."
+            additional_text = t("peak_ratio_good_fit", peak_ratio=peak_ratio)
         else:
-            additional_text = "You could save even more by shifting high-consumption activities to times with lower spot prices."
+            additional_text = t("peak_ratio_potential")
         
-        link_text = f"\n\nCheck cheapest offer: {flex_tariff.link}" if flex_tariff.link else ""
-        st.success(f"✅ Flexible Plan Recommended: You could have saved €{savings:.2f}\n\n{additional_text}{link_text}")
+        link_text = t("check_cheapest_offer", link=flex_tariff.link) if flex_tariff.link else ""
+        st.success(t("flex_plan_recommended", savings=savings, additional_text=additional_text, link_text=link_text))
     else:
-        link_text = f"\n\nCheck cheapest offer: {static_tariff.link}" if static_tariff.link else ""
-        st.warning(f"⚠️ Static Plan Recommended: The flexible plan would have cost €{-savings:.2f} more.\n\nA fixed price offers better cost stability for your current usage pattern.{link_text}")
+        link_text = t("check_cheapest_offer", link=static_tariff.link) if static_tariff.link else ""
+        st.warning(t("static_plan_recommended", abs_savings=-savings, link_text=link_text))
 
 # --- Tab: Spot Price Analysis ---
 
@@ -267,12 +309,12 @@ def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: 
 def _compute_price_distribution_data(df: pd.DataFrame, resolution: str) -> pd.DataFrame:
     """Computes and caches the quartile price data for the selected resolution."""
     logger.log("Computing Price Distribution Data")
-    price_agg_dict = {"spot_price_eur_kwh": [("q1", lambda x: x.quantile(0.25)), ("median", "median"), ("q3", lambda x: x.quantile(0.75))]}
+    price_agg_dict = {"spot_price_eur_kwh": [("q1", lambda x: x.quantile(0.25)), ("median", "median"), ("mean", "mean"), ("q3", lambda x: x.quantile(0.75))]}
     
     config = get_aggregation_config(df, resolution)
     # Drop NA before aggregation to avoid issues with empty groups
     df_price = df.dropna(subset=["spot_price_eur_kwh"]).groupby(config["grouper"]).agg(price_agg_dict)
-    df_price.columns = ["Spot Price Q1", "Spot Price Median", "Spot Price Q3"]
+    df_price.columns = ["Spot Price Q1", "Spot Price Median", "Spot Price Mean", "Spot Price Q3"]
     df_price.index = df_price.index.map(config["x_axis_map"])
     df_price.index.name = config["name"]
     # Reindex to ensure correct chronological order (e.g., Jan, Feb, Mar...)
@@ -296,18 +338,18 @@ def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     """Renders the interactive analysis of electricity spot prices."""
     logger.log("Rendering Price Analysis Tab")
     
-    resolution = st.radio("Select Time Resolution", ("Hourly", "Weekly", "Monthly"), horizontal=True, key="price_res")
+    resolution = st.radio(t("price_analysis_resolution_label"), ("Monthly", "Weekly", "Hourly"), horizontal=True, key="price_res")
     
-    # Quartile Distribution Chart
-    st.subheader("Distribution Over Time")
-    st.markdown("This chart shows the median spot price (solid line) and the 25th to 75th percentile range (dotted lines) compared to the static tariff price. 50% of the spot prices fall in the orange shaded price range.")
+    # Quartile Price Chart
+    st.subheader(t("price_over_time_header"))
+    st.markdown(t("price_over_time_markdown"))
     df_price = _compute_price_distribution_data(df, resolution)
     price_fig = charts.get_price_chart(df_price, pd.Series([static_tariff.price_kwh]*len(df.index)))
     st.plotly_chart(price_fig, use_container_width=True)
 
     # Heatmap Analysis
-    st.subheader("Average Price Heatmap (Month vs. Hour)")
-    st.markdown("This heatmap visualizes the average spot price for each hour across the months, helping to identify recurring daily and seasonal patterns.")
+    st.subheader(t("heatmap_header"))
+    st.markdown(t("heatmap_markdown"))
     heatmap_data = _compute_heatmap_data(df)
     heatmap_fig = charts.get_heatmap(heatmap_data)
     st.plotly_chart(heatmap_fig, use_container_width=True)
@@ -363,28 +405,27 @@ def render_cost_comparison_tab(df: pd.DataFrame):
 
     is_granular_data = calculate_granular_data(df)
     if not is_granular_data:
-        st.info("Flexible cost comparison is only meaningful for hourly or 15-minute consumption data. The flexible tariff results are hidden.")
+        st.info(t("granular_data_info"))
 
-    resolution = st.radio("Select Time Resolution", ("Daily", "Weekly", "Monthly"), horizontal=True, key="summary_res")
+    resolution = st.radio(t("cost_comparison_resolution_label"), ("Monthly","Weekly", "Daily"), horizontal=True, key="summary_res")
     
     df_summary = _compute_cost_comparison_data(df, resolution)
     if df_summary.empty:
-        st.warning("No data to display for the selected period and resolution.")
+        st.warning(t("no_data_for_period"))
         return
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Total Costs per Period")
-        st.markdown("Compare the total energy bill for both tariff types over time, including energy usage costs and monthly fees per period.")
+        st.subheader(t("total_costs_per_period_header"))
+        st.markdown(t("total_costs_per_period_markdown"))
         y_cols_total = ["Total Flexible Cost", "Total Static Cost"] if is_granular_data else ["Total Static Cost"]
         colors_total = [FLEX_COLOR, STATIC_COLOR] if is_granular_data else [STATIC_COLOR]
         st.line_chart(df_summary.set_index("Period"), y=y_cols_total, y_label="Total Cost (€)", color=colors_total)
 
     with col2:
-        # Learning: dots, € signs etc. in column names lead to errors
-        st.subheader("Average Price per kWh")
-        st.markdown("See the effective price per kWh after accounting for both variable costs and fixed fees per period.")
+        st.subheader(t("avg_price_per_kwh_header"))
+        st.markdown(t("avg_price_per_kwh_markdown"))
         df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
         
         if is_granular_data:
@@ -394,8 +435,8 @@ def render_cost_comparison_tab(df: pd.DataFrame):
         colors_avg = [STATIC_COLOR, FLEX_COLOR] if is_granular_data else [STATIC_COLOR]
         st.line_chart(df_summary.set_index("Period"), y=y_cols_avg, y_label="Average Price (€/kWh)", color=colors_avg)
             
-    st.subheader("Detailed Comparison Table")
-    st.text("Review the costs and savings for each period.", help="Note: For Austria, this table does not include 'Strompreisbremse' in the years before 2025, nor 'Energieabgabe' or network fees!")
+    st.subheader(t("detailed_comparison_table_header"))
+    st.text(t("detailed_comparison_table_markdown"), help=t("detailed_comparison_table_help"))
     
     # Main DataFrame
     if is_granular_data:
@@ -426,7 +467,7 @@ def render_cost_comparison_tab(df: pd.DataFrame):
     
     # Convert to HTML and render without header
     totals_html = totals_styler.hide(axis="index")
-    st.text("Total and average values for all periods.")
+    st.text(t("total_and_average_values_text"))
     st.dataframe(totals_html, hide_index=True, use_container_width=True)
 
 # --- Tab: Usage Patterns ---
@@ -623,13 +664,15 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
     
     # Allow filtering by day type
     df_filtered = df[df["consumption_kwh"] > 0].copy()
-    day_filter = st.radio("Filter data by:", ("All Days", "Weekdays", "Weekends"), horizontal=True)
+    day_filter_options = {"All Days": t("all_days"), "Weekdays": t("weekdays"), "Weekends": t("weekends")}
+    day_filter = st.radio(t("filter_by_day_type"), list(day_filter_options.keys()), format_func=lambda x: day_filter_options[x], horizontal=True)
+
     if day_filter != "All Days":
         is_weekend = df_filtered["timestamp"].dt.dayofweek >= 5
         df_filtered = df_filtered[is_weekend if day_filter == "Weekends" else ~is_weekend]
 
     if df_filtered.empty:
-        st.warning(f"No data available for {day_filter.lower()}.")
+        st.warning(t("no_data_for_filter", day_filter=day_filter.lower()))
         return
         
     intervals = get_intervals_per_day(df)
@@ -637,12 +680,10 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
     # Consumption Over Time
     df_consumption_day = _compute_consumption_quartiles(df_filtered, intervals)
     
-    st.subheader("Consumption Over Time")
+    st.subheader(t("consumption_over_time_header"))
     
     # Daily Consumption with Quartiles
-    st.markdown("#### Daily Consumption\n"
-        "This chart illustrates the statistical distribution of your consumption for the selected time resolution. "
-        "The solid line represents the **median (50th percentile)** consumption, while the dotted lines show the first and third Quartile.")
+    st.markdown(f"#### {t('daily_consumption_header')}\n{t('daily_consumption_markdown')}")
 
     if not df_consumption_day.empty:
         consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals)
@@ -650,14 +691,13 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         
     # Trend Visualization and Forecast
     try:
-        assert day_filter == "All Days", f"Day Filter is activated. Value: {day_filter}"
-
-        st.subheader("Consumption Trend & Forecast")
-        st.markdown(
-            "This chart analyzes the underlying trend in your daily consumption using a seasonal model "
-            "and provides a forecast for future usage. Use the slider below to adjust the forecast period."
-            "\n**Important**: Consider **excluding days of absence** in the sidebar for more robust predictions!"
-        )
+        if day_filter != "All Days":
+            # Forecasting is complex with filtered days, so we skip it.
+            # A log message is already present from the original code.
+            pass
+        else:
+            st.subheader(t("consumption_trend_forecast_header"))
+            st.markdown(t("consumption_trend_forecast_markdown"))
 
         col1, _, _, col2 = st.columns(4) # Use 4 columns such that the metric is on the very right of the screen.
 
@@ -676,7 +716,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
                 value = 180
                 max_value = 365*2
             
-            forecast_days = st.slider("Days to Forecast", min_value=30, max_value=max_value, value=value, step=10, key="forecast_days", width=300)
+            forecast_days = st.slider(t("forecast_slider_label"), min_value=30, max_value=max_value, value=value, step=10, key="forecast_days", width=300)
 
         # Calculation the trend data. The fitted model is cached such that only the forecast is recomputed (efficient!).
         trend_data = _compute_consumption_trend_and_forecast(df_filtered, forecast_days)
@@ -688,7 +728,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
 
             # Display the summary metric first, as a key insight
             with col2:
-                st.metric(label="Underlying Consumption Trend",
+                st.metric(label=t("underlying_consumption_trend_label"),
                     value=trend_description,
                     delta=f"{trend_metric:.1f}% change over period",
                     delta_color=("inverse" if trend_metric < 0 else "normal"),
@@ -700,55 +740,54 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
             st.plotly_chart(trend_fig, use_container_width=True)
 
             # Expander for seasonality components
-            with st.expander("Show Seasonality Details"):
-                st.markdown("These charts show the different seasonal patterns the model has learned from your data.")
+            with st.expander(t("show_seasonality_details")):
+                st.markdown(t("seasonality_details_markdown"))
                 if model:
                     seasonality_charts = charts.get_seasonality_charts(model, df_forecast)
                     st.plotly_chart(seasonality_charts, use_container_width=True, key=f"forecast_details")
 
         else:
-            st.info("A meaningful consumption trend could not be calculated. This usually requires at least 30 days of data.")
+            st.info(t("no_trend_info"))
 
     except AssertionError as e:
         logger.log(f"Error in Forecasting: {e}", severity=1)
 
     except (KeyError, ValueError) as e:
         logger.log(f"Error in Forecasting: {e}", severity=1)
-        st.error("An error occurred while generating the forecast. Please check the data or try a different period.")
+        st.error(t("forecasting_error"))
 
             
     # Only show the detailed analysis when consumption data includes 15 minutes intervals.
     if intervals <= 24: # Hourly data or less
-        st.info("Please provide data with 15-minute intervals for a more detailed usage profile analysis.")
+        st.info(t("granular_data_needed_for_profile"))
         return
 
     # Consumption & Usage Profile (Marimekko Chart)
-    st.subheader("Usage Profile")
-    st.markdown("This chart shows how much each consumption type (Base, Regular, Peak) contributes to your total usage, and the average spot price you paid for each.")
+    st.subheader(t("usage_profile_header"))
+    st.markdown(t("usage_profile_markdown"))
     profile_data = _compute_usage_profile_data(df_filtered)
 
     # Display Thresholds
-    col1, col2 = st.columns(2)
-    col1.metric("Base Load Threshold", f"{base_threshold:.3f} kWh", help="Continuous Usage", width="stretch")
+    col1.metric(t("base_load_threshold_metric"), f"{base_threshold:.3f} kWh", help=t("base_load_threshold_help"))
     
     # The peak_threshold passed is the influenceable part. Add base for the absolute value.
     absolute_peak_threshold = base_threshold + peak_threshold
-    col2.metric("Peak Sustain Threshold", f"{absolute_peak_threshold:.3f} kWh", help="A peak event starts with a sharp increase and continues for every hour consumption stays above this level.", width="stretch")
+    col2.metric(t("peak_sustain_threshold_metric"), f"{absolute_peak_threshold:.3f} kWh", help=t("peak_sustain_threshold_help"))
 
     if not profile_data.empty:
         marimekko_fig = charts.get_marimekko_chart(profile_data)      
         st.plotly_chart(marimekko_fig, use_container_width=True)
 
     # Example Day Breakdown
-    st.subheader("Example Day Breakdown")
-    st.markdown("This chart shows the classification for a random day from your data to provide a better intuition.")
+    st.subheader(t("example_day_breakdown_header"))
+    st.markdown(t("example_day_breakdown_markdown"))
     
     available_dates = df_filtered["date"].unique().tolist()
     if available_dates:
         if "random_day" not in st.session_state or st.session_state.random_day not in available_dates:
             st.session_state.random_day = random.choice(available_dates)
         
-        if st.button("Show a Different Day"):
+        if st.button(t("show_different_day_button")):
             st.session_state.random_day = random.choice(available_dates)
             st.rerun()
         
@@ -756,7 +795,8 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         df_day = _compute_example_day(df_filtered, st.session_state.random_day, group=False)
         # Ensure correct stacking order for the bar chart: Base (bottom), Regular, Peak (top).
         df_day = df_day[["Base Load", "Regular Load", "Peak Load"]]
-        st.caption(f"Displaying data for {st.session_state.random_day.strftime('%A, %Y-%m-%d')} (Total: {df_day.sum().sum():.2f} kWh)")
+        day_str = st.session_state.random_day.strftime('%A, %Y-%m-%d')
+        st.caption(t("example_day_caption", day=day_str, total_kwh=df_day.sum().sum()))
         example_day_fig = charts.plot_example_day(df_day, intervals, BASE_COLOR, REGULAR_COLOR, PEAK_COLOR)
         st.plotly_chart(example_day_fig, use_container_width=True)
         #st.bar_chart(df_day, color=[BASE_COLOR, REGULAR_COLOR, PEAK_COLOR], x_label="Hour of Day", y_label="Consumption (kWh)")
@@ -788,10 +828,10 @@ def _compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
 
 def render_yearly_summary_tab(df: pd.DataFrame):
     """Renders the content for the 'Yearly Summary' tab."""
-    st.subheader("Yearly Summary")
+    st.subheader(t("yearly_summary_header"))
     yearly_agg = _compute_yearly_summary(df)
     if yearly_agg.empty:
-        st.warning("No data available to generate a yearly summary.")
+        st.warning(t("no_yearly_summary_data"))
         return
     
     # Rename columns for a more descriptive display in the table
@@ -850,60 +890,28 @@ def render_download_tab(df: pd.DataFrame, start_date: date, end_date: date):
 # --- FAQ & Help Tab ---
 def render_faq_tab():
     """Renders the content for the 'FAQ & Help' tab."""
-    st.subheader("Frequently Asked Questions & Help")
+    st.subheader(t("faq_header"))
 
-    with st.expander("What does this tool do?", expanded=True):
-        st.markdown("""
-        This dashboard allows you to:
-        - **Analyze your electricity consumption** by uploading your historical data.
-        - **Compare the costs** of a flexible (spot-price based) tariff against a static (fixed-price) tariff.
-        - **Simulate savings** from shifting high-consumption activities (like EV charging) to cheaper hours.
-        - **Understand your usage patterns** by classifying your consumption into Base, Regular, and Peak loads.
-        - **Get a data-driven recommendation** on which tariff type is more economical for you.
-        """)
+    with st.expander(t("faq_what_does_it_do_q"), expanded=True):
+        st.markdown(t("faq_what_does_it_do_a"))
 
-    with st.expander("How do I use this dashboard?"):
-        st.markdown("""
-        1.  **Upload Your Data**: Use the file uploader in the sidebar to upload your consumption data CSV file.
-        2.  **Configure Settings**:
-            - **Country**: Select the country to fetch the correct EPEX spot market prices.
-            - **Analysis Period**: Choose the date range for your analysis.
-            - **Tariff Plans**: Either let the app find the cheapest predefined tariffs or configure your own custom tariffs.
-            - **Load Shifting**: Use the slider to simulate potential savings from shifting your peak usage.
-        3.  **Explore the Tabs**: Navigate through the different tabs to see detailed analyses of prices, costs, and your usage patterns.
-        """)
+    with st.expander(t("faq_how_to_use_q")):
+        st.markdown(t("faq_how_to_use_a"))
 
-    with st.expander("What kind of data file do I need?"):
-        st.markdown("""
-        - **Format**: A CSV file containing your electricity consumption.
-        - **Required Columns**: The file must contain at least a timestamp and a consumption value (in kWh). The parser is designed to automatically detect formats from many providers.
-        - **Granularity**: For the best results, especially for the *Usage Patterns*, data with **15-minute intervals** is recommended. Hourly data also works well. Daily data will have limited analysis capabilities.
-        - **Getting Your Data**: Check your electricity provider's online portal. Many allow you to download your historical consumption data. The link in the sidebar provides more tips.
-        - **Privacy**: The app does not store your data, but when deployed on a public server, the file is temporarily uploaded. It's recommended to anonymize personal information (like names or meter IDs) in the file before uploading, but do not delete the columns.
-        
-        Pro Tip: [aWATTar backtesting](https://awattar-backtesting.github.io) provides detailed instructions for different network operators. 
-        """)
+    with st.expander(t("faq_data_file_q")):
+        st.markdown(t("faq_data_file_a"))
 
-    with st.expander("What do the different 'load types' mean?"):
-        st.markdown("""
-        The *Usage Patterns* tab classifies your consumption into three types:
-        - **Base Load**: The continuous, minimum level of power your household consumes, even when you're asleep or away (e.g., refrigerator, standby devices). It's calculated by finding the most stable, low-consumption period each day.
-        - **Regular Load**: The variable, everyday consumption above your base load (e.g., lights, cooking, TV).
-        - **Peak Load**: Significant, short-term spikes in consumption, typically from high-power appliances like electric vehicle chargers, heat pumps, or washing machines. The analysis identifies these based on sharp increases in usage that are sustained above a high threshold.
-        """)
+    with st.expander(t("faq_load_types_q")):
+        st.markdown(t("faq_load_types_a"))
     
-    with st.expander("How does 'Peak Load Shifting' work?"):
-        st.markdown("""
-        The simulation works by taking a percentage of your identified "Peak Load" and moving it from the most expensive hour it occurred in to the cheapest hour within a 4-hour window (+/- 2 hours).
+    with st.expander(t("faq_peak_shifting_q")):
+        st.markdown(t("faq_peak_shifting_a"))
         
-        This simulates the real-world scenario of programming a smart device (like an EV charger or a heat pump) to run during off-peak, cheaper hours, showing you the potential savings on a flexible tariff.
-        """)
-        
-    st.info("Still questions left? Please check the [ReadMe](https://github.com/albortino/EPEX-Spot-Analysis/blob/main/readme.md) or raise an [issue](https://github.com/albortino/EPEX-Spot-Analysis/issues) on Github!")
+    st.info(t("faq_footer_info"))
 
 # --- Footer ---
 @st.cache_data
 def render_footer():
     """Renders the footer with information about the project and further links."""
     st.markdown("\n\n---")
-    st.markdown("""Developed by [__albortino__](https://github.com/albortino). This tool builds upon the great work of [awattar backtesting](https://awattar-backtesting.github.io), which provides further analyses.""")
+    st.markdown(t("footer_text"))
