@@ -37,9 +37,9 @@ def t(key: str, **kwargs):
 # --- Introduction ---
 def render_intro():
     st.markdown(f"## {t('intro_title')}\n\n{t('intro_subtitle')}")
+    st.info(t('intro_welcome_message'))
     st.markdown(f"### {t('intro_introduction_header')}\n{t('intro_introduction_text')}\n\n"
                 f"**{t('intro_important_notice')}**")
-    st.info(t('intro_welcome_message'))
 
 
 # --- Sidebar and Input Controls ---
@@ -894,6 +894,9 @@ def render_faq_tab():
 
     with st.expander(t("faq_what_does_it_do_q"), expanded=True):
         st.markdown(t("faq_what_does_it_do_a"))
+    
+    with st.expander(t("faq_price_differences_q")):
+        st.markdown(t("faq_price_differences_a"))
 
     with st.expander(t("faq_how_to_use_q")):
         st.markdown(t("faq_how_to_use_a"))
@@ -913,5 +916,27 @@ def render_faq_tab():
 @st.cache_data
 def render_footer():
     """Renders the footer with information about the project and further links."""
-    st.markdown("\n\n---")
-    st.markdown(t("footer_text"))
+    footer_css = """
+    <style>
+    /* Add padding to the bottom of the main content area to prevent overlap with the fixed footer. */
+    .stApp {
+        padding-bottom: 5rem;
+    }
+
+    .footer {
+        position: fixed; 
+        left: 0;
+        bottom: 0;
+        z-index: 999; /* Ensure footer is on top */
+        width: 100%;
+        background-color: "var(--secondary-background-color)";
+        background-color: var(--secondary-background-color);
+        color: var(--text-color);
+        text-align: center;
+        padding: 10px;
+        border-top: 1px solid var(--gray-30); 
+    }
+    </style>
+    """
+    st.markdown(footer_css, unsafe_allow_html=True)
+    st.markdown(f'<div class="footer"><p>{t("footer_text")}</p></div>', unsafe_allow_html=True)

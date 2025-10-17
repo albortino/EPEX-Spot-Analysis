@@ -40,8 +40,8 @@ class TariffManager:
                     Tariff(
                         name=item.get("name", "Unnamed"),
                         type=tariff_type,
-                        price_kwh=item.get("price_kwh", 0.0),
-                        monthly_fee=item.get("monthly_fee", 0.0),
+                        price_kwh=item.get("price_kwh_gross", 0.0),
+                        monthly_fee=item.get("monthly_fee_gross", 0.0),
                         link=item.get("link", ""),
                         price_kwh_pct=item.get("price_kwh_pct", 0.0)
                     ) for item in tariff_data

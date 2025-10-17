@@ -2,50 +2,56 @@
   {
     "name": "disk.strom (disk.energy)",
     "link": "https://www.disk.energy/produkte",
-    "price_kwh": 0.1308,
-    "monthly_fee": 2.00
+    "price_kwh_gross": 0.1308,
+    "monthly_fee_gross": 2.00
   },
   {
     "name": "V Strom Classic (Verbund",
     "link": "https://www.verbund.com/de/privat/strom/verbund-strom",
-    "price_kwh": 0.1884,
-    "monthly_fee": 4.79
+    "price_kwh_gross": 0.1884,
+    "monthly_fee_gross": 4.79
   },
   {
     "name": "Max Basic Strom (MAXENERGY)",
     "link": "https://www.maxenergy.at/tarifuebersicht.html?/tariff_type=electricity",
-    "price_kwh": 0.156,
-    "monthly_fee": 6.00
+    "price_kwh_gross": 0.156,
+    "monthly_fee_gross": 6.00
+  },
+  {
+    "name": "AAE Natur Pur 25.8",
+    "link": "https://aae.at/blog/stromtarif/natur-pur-25-8/",
+    "price_kwh_gross": 0.0966,
+    "monthly_fee_gross": 6.00
   },
   {
     "name": "OPTIMA Entspannt plus (Wien Energie)",
     "link": "https://www.wienenergie.at/privat/produkte/strom/optima-entspannt-plus/?options=SOPTB_0002-okopure-none",
-    "price_kwh": 0.158029,
-    "monthly_fee": 6.13155833
+    "price_kwh_gross": 0.158029,
+    "monthly_fee_gross": 6.13155833
   },
   {
     "name": "voltino privat 24 (Wels Strom GmbH)",
     "link": "https://www.voltino-gastino.at/preise",
-    "price_kwh": 0.2028,
-    "monthly_fee": 5.88
+    "price_kwh_gross": 0.2028,
+    "monthly_fee_gross": 5.88
   },
 
   {
     "name": "oeko Fair (oekostrom)",
     "link": "https://oekostrom.at/strom/",
-    "price_kwh": 0.1848,
-    "monthly_fee": 4.9917
+    "price_kwh_gross": 0.1848,
+    "monthly_fee_gross": 4.9917
   },
   {
     "name": "Pullstrom Classic S (pullstrom)",
     "link": "https://www.pullstrom.at/#tarife",
-    "price_kwh": 0.1728,
-    "monthly_fee": 4.90
+    "price_kwh_gross": 0.1728,
+    "monthly_fee_gross": 4.90
   },
   {
     "name": "E.ON Ökostrom Basis (E.ON Energie Österreich)",
     "link": "https://www.eon-energie.at/at/strom/stromtarif.html",
-    "price_kwh": 0.282,
-    "monthly_fee": 5.40
+    "price_kwh_gross": 0.282,
+    "monthly_fee_gross": 5.40
   }
 ]
