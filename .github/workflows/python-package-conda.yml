@@ -18,7 +18,7 @@ jobs:
       with:
         auto-update-conda: true
         environment-file: environment.yml
-        activate-environment: streamlit # Name from environment.yml
+        activate-environment: epex-spot-sl
         cache-environment: true
         use-mamba: true # Mamba is a faster drop-in replacement for conda
 
