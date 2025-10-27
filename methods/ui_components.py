@@ -2,37 +2,16 @@ import streamlit as st
 import pandas as pd
 import random
 from datetime import date
-import json
 import numpy as np
+import plotly.graph_objects as go
 import io
 
-from prophet import Prophet
-
+from methods.i18n import t
 from methods.config import *
 from methods.tariffs import Tariff, TariffManager, TariffType
-from methods.utils import get_min_max_date, to_excel, get_intervals_per_day, get_aggregation_config, calculate_granular_data
-import methods.data_loader as data_loader
+from methods.utils import to_excel, get_intervals_per_day, get_aggregation_config, calculate_granular_data, get_min_max_date
 import methods.charts as charts
 from methods.logger import logger
-
-# --- Internationalization (i18n) ---
-
-@st.cache_data(ttl=3600)
-def _load_translations(language: str) -> dict:
-    """Loads the translation file for the selected language."""
-    try:
-        with open(f"locales/{language}.json", "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        logger.log(f"Translation file for language '{language}' not found. Defaulting to English.", severity=1)
-        with open("locales/de.json", "r", encoding="utf-8") as f:
-            return json.load(f)
-
-def t(key: str, **kwargs):
-    """Returns the translated string for a given key."""
-    lang = st.session_state.get("lang", "de")
-    translations = _load_translations(lang)
-    return translations.get(key, key).format(**kwargs)
 
 # --- Introduction ---
 def render_intro():
@@ -104,95 +83,56 @@ def render_upload_file():
 
     return st.session_state.get("file_uploader")
 
-
-@st.cache_data(ttl=60*10)
-def _compare_all_tariffs(df_consumption: pd.DataFrame, _tariff_manager: TariffManager, country: str) -> tuple[Tariff | None, Tariff | None]:
-    """Finds the cheapest flex and static tariffs from the predefined lists."""
-    logger.log("Calculating cheapest tariff comparison", )
-    
-    flex_options = _tariff_manager.get_flex_tariffs_with_custom()
-    static_options = _tariff_manager.get_static_tariffs_with_custom()
-    total_costs = {}
-    
-    # Calculate total costs for all non-custom tariffs.
-    # First, ensure we have spot price data for flexible tariff calculations.
-    df = df_consumption.copy()
-    if "spot_price_eur_kwh" not in df.columns:
-        min_date, max_date = get_min_max_date(df, today_as_max=TODAY_IS_MAX_DATE)
-        df_spot_prices = data_loader.get_spot_data(country, min_date, max_date)
-        df = data_loader.merge_consumption_with_prices(df, df_spot_prices)
-
-    for name, tariff in flex_options.items():
-        if name == "Custom": continue
-        total_costs[("flex", name)] = _tariff_manager._calculate_flexible_cost(df, tariff).sum()
-    
-    for name, tariff  in static_options.items():
-        if name == "Custom": continue
-        total_costs[("static", name)] = _tariff_manager._calculate_static_cost(df, tariff).sum()
-    
-    # Identify the cheapest tariffs based on the calculated costs robustly
-    final_flex_tariff = None
-    flex_keys = [k for k in total_costs if k[0] == "flex"]
-    if flex_keys:
-        cheapest_flex_key = min(flex_keys, key=total_costs.get) #type: ignore
-        final_flex_tariff = flex_options.get(cheapest_flex_key[1])
-    else:
-        st.warning(t("no_predefined_flex_tariffs"))
-
-    final_static_tariff = None
-    static_keys = [k for k in total_costs if k[0] == "static"]
-    if static_keys:
-        cheapest_static_key = min(static_keys, key=total_costs.get) #type: ignore
-        final_static_tariff = static_options.get(cheapest_static_key[1])
-    else:
-        st.warning(t("no_predefined_static_tariffs"))
-    
-    return final_flex_tariff, final_static_tariff
-
-def _render_tariff_selection_widgets(_tariff_manager: TariffManager, expanded: bool = True) -> tuple[Tariff, Tariff]:
+def _render_tariff_selection_widgets(_tariff_manager: TariffManager, expanded: bool = True, key_prefix: str = "") -> tuple[Tariff, Tariff]:
     """Renders tariff selection expanders in the UI for user customization."""
     logger.log("Rendering Tariff Selection")
     
-    final_tariffs: list[Tariff] = []
     options = [
         (t("flexible_plan_title"), _tariff_manager.get_flex_tariffs_with_custom()),
         (t("static_plan_title"), _tariff_manager.get_static_tariffs_with_custom())
     ]
 
-    for title, tariff_options in options:
-        with st.expander(title, expanded=expanded):
-            # Determine tariff type from the first word of the title
-            tariff_type_str = title.split(" ")[0]
+    col1, col2 = st.columns(2)
+    final_tariffs = {}
 
-            # Let user select a predefined tariff or 'Custom'
-            selected_name = st.selectbox(
-                t("select_tariff_type", tariff_type=tariff_type_str), 
-                options=list(tariff_options.keys()), 
-                index=len(tariff_options) - 1,
-                key=f"select_{tariff_type_str}"
-            )
-            selected_tariff = tariff_options[selected_name]
-            
-            # Display input fields pre-filled with the selected tariff's data
-            price_kwh = st.number_input(t("on_top_price"), value=selected_tariff.price_kwh, min_value=0.0, step=0.001, format="%.4f", key=f"{tariff_type_str}_price")
-            price_kwh_pct = 0.0
-            if selected_tariff.type == TariffType.FLEXIBLE:
-                price_kwh_pct = st.number_input(t("variable_price_pct"), value=selected_tariff.price_kwh_pct, min_value=0.0, max_value=100.0, step=1.0, format="%.1f", key=f"{tariff_type_str}_pct")
-            
-            monthly_fee = st.number_input(t("monthly_fee"), value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{tariff_type_str}_fee")
-            
-            # Create a new Tariff object with the potentially modified values
-            final_tariffs.append(
-                Tariff(name=selected_name, type=selected_tariff.type, price_kwh=price_kwh, monthly_fee=monthly_fee, price_kwh_pct=price_kwh_pct)
-            )
-    
-    # Ensure the return order is always (flex, static)
-    if final_tariffs[0].type == TariffType.FLEXIBLE:
-        return final_tariffs[0], final_tariffs[1]
-    else:
-        return final_tariffs[1], final_tariffs[0]
+    # Helper function to render a single tariff selector
+    def render_selector(column, title, tariff_options, tariff_key):
+        with column:
+            with st.expander(title, expanded=expanded):
+                tariff_type_str = title.split(" ")[0]
+                selected_name = st.selectbox(
+                    t("select_tariff_type", tariff_type=tariff_type_str),
+                    options=list(tariff_options.keys()),
+                    index=len(tariff_options) - 1,
+                    key=f"{key_prefix}_select_{tariff_type_str}"
+                )
+                selected_tariff = tariff_options[selected_name]
+                
+                price_label = t("on_top_price") if selected_tariff.type == TariffType.FLEXIBLE else t("price_per_kwh")
+                
+                price_kwh = st.number_input(price_label, value=selected_tariff.price_kwh, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_{tariff_type_str}_price")
+                
+                price_kwh_pct = 0.0
+                if selected_tariff.type == TariffType.FLEXIBLE:
+                    price_kwh_pct = st.number_input(t("variable_price_pct"), value=selected_tariff.price_kwh_pct, min_value=0.0, max_value=100.0, step=1.0, format="%.1f", key=f"{key_prefix}_{tariff_type_str}_pct")
+                monthly_fee = st.number_input(t("monthly_fee"), value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{key_prefix}_{tariff_type_str}_fee")
+                usage_tax = st.checkbox(t("include_usage_fee"), value=False, key=f"{key_prefix}_{tariff_type_str}_usage_tax")
+                
+                final_tariffs[tariff_key] = Tariff(
+                    name=selected_name, 
+                    type=selected_tariff.type, 
+                    price_kwh=price_kwh, 
+                    monthly_fee=monthly_fee, 
+                    price_kwh_pct=price_kwh_pct,
+                    usage_tax=usage_tax)
 
-def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, str, date, date, float]:
+    # Render selectors in columns
+    render_selector(col1, options[0][0], options[0][1], "flex")
+    render_selector(col2, options[1][0], options[1][1], "static")
+
+    return final_tariffs["flex"], final_tariffs["static"]
+
+def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, str, date, date, str, float]:
     """Renders all sidebar inputs and returns the configuration values."""
     logger.log("Rendering Sidebar")
     with st.sidebar:
@@ -232,6 +172,15 @@ def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, str, date, date, float
                 label_visibility="collapsed"
             )
 
+            # Quarter selection
+            quarter_options = ["All", "Q1", "Q2", "Q3", "Q4"]
+            selected_quarter = st.selectbox(
+                t("select_quarter_label"),
+                options=quarter_options,
+                index=0, # Default to "All"
+                key="quarter_selector"
+            )
+
         # Split into start and end dates
         if isinstance(selected_range, tuple) and len(selected_range) == 2:
             start_date, end_date = selected_range
@@ -239,60 +188,62 @@ def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, str, date, date, float
             # Fallback for the rare case where only one date is returned
             start_date, end_date = selected_range[0], max_date
         
-        # 3. Load Shifting Simulation
+        # 4. Load Shifting Simulation
         with st.expander(t("simulate_consumption_shifting"), expanded=False):
             st.markdown(t("simulate_shifting_markdown"), help=t("simulate_shifting_help"))
             shift_percentage = st.slider(t("shift_peak_load_slider"), min_value=0, max_value=100, value=0, step=5)
 
-        return mode, awattar_country, start_date, end_date, shift_percentage
+        return mode, awattar_country, start_date, end_date, selected_quarter, shift_percentage
 
-def render_tariff_selection_header(df: pd.DataFrame, tariff_manager: TariffManager, country: str) -> tuple[Tariff, Tariff]:
+def render_tariff_selection_header(df: pd.DataFrame, tariff_manager: TariffManager, country: str, key_prefix: str = "") -> tuple[Tariff, Tariff]:
     """Renders the main tariff selection UI on the main page."""
-    with st.container(border=True):
-        st.markdown(t("tariff_plan_help"))
+    with st.expander(t("select_tariff_plan"), expanded=True):
+        with st.container(border=False):
 
-        compare_cheapest = st.checkbox(t("compare_cheapest_tariffs"), value=True, help=t("compare_cheapest_tariffs_help"))
-
-        if compare_cheapest:
-            final_flex_tariff, final_static_tariff = _compare_all_tariffs(df, tariff_manager, country)
+            compare_cheapest = st.checkbox(t("compare_cheapest_tariffs"), value=True, help=t("compare_cheapest_tariffs_help"), key=f"{key_prefix}_compare_cheapest")
             
-            col1, col2 = st.columns(2)
-            with col1:
-                flex_info = t("cheapest_flex_tariff_info", tariff_name=final_flex_tariff.name) if final_flex_tariff else t("no_predefined_flex_tariffs")
-                st.info(flex_info)
-            with col2:
-                static_info = t("cheapest_static_tariff_info", tariff_name=final_static_tariff.name) if final_static_tariff else t("no_predefined_static_tariffs")
-                st.info(static_info)
-            
-            return final_flex_tariff, final_static_tariff
-        else:
-            final_flex_tariff, final_static_tariff = _render_tariff_selection_widgets(tariff_manager, expanded=False)
-            return final_flex_tariff, final_static_tariff
+            if compare_cheapest:
+                # Lazily import to avoid circular dependency
+                from methods.analysis import compare_all_tariffs
+                final_flex_tariff, final_static_tariff = compare_all_tariffs(tariff_manager, df, country)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if final_flex_tariff:
+                        flex_info = t("cheapest_flex_tariff_info", tariff_name=final_flex_tariff.name)
+                    else:
+                        flex_info = t("no_predefined_flex_tariffs")
+                        # Create a dummy tariff to avoid errors downstream
+                        final_flex_tariff = Tariff(name="Dummy", type=TariffType.FLEXIBLE, price_kwh=0, monthly_fee=0)
+                    st.info(flex_info)
+                with col2:
+                    static_info = t("cheapest_static_tariff_info", tariff_name=final_static_tariff.name) if final_static_tariff else t("no_predefined_static_tariffs")
+                    st.info(static_info)
+                
+                return final_flex_tariff, final_static_tariff
+            else:
+                final_flex_tariff, final_static_tariff = _render_tariff_selection_widgets(tariff_manager, expanded=True, key_prefix=key_prefix)
+                return final_flex_tariff, final_static_tariff
 
 # --- Main Page Components ---
 
-@st.cache_data(ttl=3600)
-def _compute_absence_data(df: pd.DataFrame, base_threshold: float, absence_threshold: float) -> list:
-    """Computes and caches the days of absence based on low daily consumption."""
-    logger.log("Computing Absence Data")
-    if 'date' not in df.columns:
-        df['date'] = df['timestamp'].dt.date
-    daily_consumption = df.groupby('date')["consumption_kwh"].sum()
-    intervals_per_day = get_intervals_per_day(df)
-    # Identify days where total consumption is below a fraction of the typical daily base load
-    absence_days = daily_consumption[daily_consumption < (base_threshold * intervals_per_day * absence_threshold)].index.tolist()
-    return absence_days
-
-def render_absence_days(df: pd.DataFrame, base_threshold: float) -> pd.DataFrame:
+def render_absence_days(df: pd.DataFrame, base_threshold: float, absence_threshold: float) -> pd.DataFrame:
     """Adds a sidebar option to remove days with very low consumption."""
+    # Lazily import to avoid circular dependency
+    from methods.analysis import compute_absence_data
+
+    # Ensure the 'date' column exists before any processing.
+    if 'date' not in df.columns and 'timestamp' in df.columns:
+        df['date'] = df['timestamp'].dt.date
+
     with st.sidebar:
-        absence_days = _compute_absence_data(df, base_threshold, ABSENCE_THRESHOLD)
+        absence_days = compute_absence_data(df, base_threshold, absence_threshold)
         if absence_days:
             with st.expander(t("remove_absence_days"), expanded=False):
-                st.text(t("remove_absence_days_help", count=len(absence_days)), help=t("remove_absence_days_long_help", threshold=ABSENCE_THRESHOLD))
-                select_all = st.checkbox(t("exclude_all_days_checkbox"), value=False)
+                st.text(t("remove_absence_days_help", count=len(absence_days)), help=t("remove_absence_days_long_help", threshold=absence_threshold))
+                select_all = st.checkbox(t("exclude_all_days_checkbox"), value=False, key="absence_select_all")
                 default_selection = absence_days if select_all else []
-                excluded_days = st.multiselect(t("multiselect_excluded_days"), options=absence_days, default=default_selection)
+                excluded_days = st.multiselect(t("multiselect_excluded_days"), options=absence_days, default=default_selection, key="absence_multiselect")
                 
             if excluded_days:
                 # Filter out the selected absence days
@@ -327,127 +278,115 @@ def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: 
             additional_text = t("peak_ratio_potential")
         
         link_text = t("check_cheapest_offer", link=flex_tariff.link) if flex_tariff.link else ""
-        st.success(t("flex_plan_recommended", savings=savings, additional_text=additional_text, link_text=link_text))
-    else:
+        st.success(t("flex_plan_recommended", savings=savings, additional_text=additional_text, link_text=link_text), icon="✅")
+    elif savings < 0: # Only show warning if there are actual losses
         link_text = t("check_cheapest_offer", link=static_tariff.link) if static_tariff.link else ""
-        st.warning(t("static_plan_recommended", abs_savings=-savings, link_text=link_text))
+        st.warning(t("static_plan_recommended", abs_savings=-savings, link_text=link_text), icon="⚠️")
+    # If savings is 0, no recommendation is strictly needed, or a neutral message could be added.
 
 # --- Tab: Spot Price Analysis ---
-
-@st.cache_data(ttl=3600)
-def _compute_price_distribution_data(df: pd.DataFrame, resolution: str) -> pd.DataFrame:
-    """Computes and caches the quartile price data for the selected resolution."""
-    logger.log("Computing Price Distribution Data")
-    price_agg_dict = {"spot_price_eur_kwh": [("q1", lambda x: x.quantile(0.25)), ("median", "median"), ("mean", "mean"), ("q3", lambda x: x.quantile(0.75))]}
-    
-    config = get_aggregation_config(df, resolution)
-    # Drop NA before aggregation to avoid issues with empty groups
-    df_price = df.dropna(subset=["spot_price_eur_kwh"]).groupby(config["grouper"]).agg(price_agg_dict)
-    df_price.columns = ["Spot Price Q1", "Spot Price Median", "Spot Price Mean", "Spot Price Q3"]
-    df_price.index = df_price.index.map(config["x_axis_map"])
-    df_price.index.name = config["name"]
-    # Reindex to ensure correct chronological order (e.g., Jan, Feb, Mar...)
-    # Then, drop any rows that are all NA, which happens for months with no data.
-    df_price = df_price.reindex(config["x_axis_map"].values()).dropna(how="all")
-    return df_price
-
-@st.cache_data(ttl=3600)
-def _compute_heatmap_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Computes and caches the data needed for the price heatmap."""
-    logger.log("Computing Heatmap Data")
-    df_pvt = df.pivot_table(values="spot_price_eur_kwh", index=df["timestamp"].dt.month, columns=df["timestamp"].dt.hour, aggfunc="mean")
-    
-    # Create a copy and convert integer column names to strings for plotly compatibility.
-    df_pvt = df_pvt.copy()
-    df_pvt.columns = df_pvt.columns.map(str)
-    
-    return df_pvt
 
 def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     """Renders the interactive analysis of electricity spot prices."""
     logger.log("Rendering Price Analysis Tab")
-    
-    resolution = st.radio(t("price_analysis_resolution_label"), ("Monthly", "Weekly", "Hourly"), horizontal=True, key="price_res")
+    # Lazily import to avoid circular dependency
+    from methods.analysis import compute_price_distribution_data, compute_heatmap_data
     
     # Quartile Price Chart
     st.subheader(t("price_over_time_header"))
     st.markdown(t("price_over_time_markdown"))
-    df_price = _compute_price_distribution_data(df, resolution)
+
+    resolution = st.radio(t("price_analysis_resolution_label"), ("Monthly", "Weekly", "Hourly"), horizontal=True, key="price_res")
+
+    df_price = compute_price_distribution_data(df, resolution)
     price_fig = charts.get_price_chart(df_price, pd.Series([static_tariff.price_kwh]*len(df.index)))
-    st.plotly_chart(price_fig, use_container_width=True)
+    st.plotly_chart(price_fig, use_container_width=True, key="price_analysis_chart")
 
     # Heatmap Analysis
     st.subheader(t("heatmap_header"))
     st.markdown(t("heatmap_markdown"))
-    heatmap_data = _compute_heatmap_data(df)
+    heatmap_data = compute_heatmap_data(df)
     heatmap_fig = charts.get_heatmap(heatmap_data)
-    st.plotly_chart(heatmap_fig, use_container_width=True)
+    st.plotly_chart(heatmap_fig, use_container_width=True, key="price_heatmap_chart")
 
 def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_threshold: float, peak_threshold: float):
     """Renders the content for the 'Basic Dashboard' tab."""
     logger.log("Rendering Basic Dashboard Tab")
+    # Lazily import to avoid circular dependency
+    from methods.analysis import compute_price_distribution_data, compute_cost_comparison_data, compute_consumption_quartiles, compute_usage_profile_data
 
     # 1. Price Chart (Monthly)
     st.subheader(t("price_over_time_header"))
     st.markdown(t("price_over_time_markdown"))
-    df_price = _compute_price_distribution_data(df, "Monthly")
+    
+    resolution = st.radio(t("price_analysis_resolution_label"), ("Monthly", "Weekly", "Hourly"), horizontal=True, key="basic_res")
+
+    df_price = compute_price_distribution_data(df, resolution)
     price_fig = charts.get_price_chart(df_price, pd.Series([static_tariff.price_kwh]*len(df.index)))
-    st.plotly_chart(price_fig, use_container_width=True)
+    st.plotly_chart(price_fig, use_container_width=True, key="basic_price_chart")
 
     # 2. Average Price per kWh
     st.subheader(t("avg_price_per_kwh_header"))
     st.markdown(t("avg_price_per_kwh_markdown"))
-    df_summary = _compute_cost_comparison_data(df, "Monthly")
+    df_summary = compute_cost_comparison_data(df, "Monthly") # Always use monthly for this overview chart
     is_granular_data = calculate_granular_data(df)
     if not df_summary.empty:
         df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
         if is_granular_data:
             df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
         
-        y_cols_avg = ["Avg Static Price", "Avg. Flexible Price"] if is_granular_data else ["Avg Static Price"]
-        colors_avg = [STATIC_COLOR, FLEX_COLOR] if is_granular_data else [STATIC_COLOR]
-        st.line_chart(df_summary.set_index("Period"), y=y_cols_avg, y_label="Average Price (€/kWh)", color=colors_avg)
+        avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular_data)
+        st.plotly_chart(avg_price_fig, use_container_width=True, key="basic_avg_price_chart")
 
     # 3. Daily Usage
     st.subheader(t("daily_consumption_header"))
     st.markdown(t("daily_consumption_markdown"))
     intervals = get_intervals_per_day(df)
-    df_consumption_day = _compute_consumption_quartiles(df, intervals)
+    df_median_spot = compute_price_distribution_data(df, "Hourly")
+    df_consumption_day = compute_consumption_quartiles(df, intervals)
     if not df_consumption_day.empty:
-        consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals)
-        st.plotly_chart(consumption_fig, use_container_width=True)
+        consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals, df_median_spot)
+        st.plotly_chart(consumption_fig, use_container_width=True, key="basic_consumption_chart")
 
     # 4. Usage Profile
     if intervals > 24: # Only for granular data
         st.subheader(t("usage_profile_header"))
         st.markdown(t("usage_profile_markdown"))
-        profile_data = _compute_usage_profile_data(df)
+        
+        # Display Thresholds
+        col1, col2, _, _ = st.columns(4)
+        col1.metric(t("base_load_threshold_metric"), f"{base_threshold:.3f} kWh", help=t("base_load_threshold_help"))
+        # The peak_threshold passed is the influenceable part. Add base for the absolute value.
+        absolute_peak_threshold = base_threshold + peak_threshold
+        col2.metric(t("peak_sustain_threshold_metric"), f"{absolute_peak_threshold:.3f} kWh", help=t("peak_sustain_threshold_help"))
+
+        profile_data = compute_usage_profile_data(df)
         if not profile_data.empty:
             marimekko_fig = charts.get_marimekko_chart(profile_data)      
-            st.plotly_chart(marimekko_fig, use_container_width=True)
+            st.plotly_chart(marimekko_fig, use_container_width=True, key="basic_marimekko_chart")
 
     # 5. Comparison Table
-    render_cost_comparison_tab(df)
-# --- Tab: Cost Comparison ---
-
-@st.cache_data(ttl=3600)
-def _compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataFrame:
-    """Computes and caches aggregated cost data for comparison."""
-    logger.log("Computing Cost Comparison Data")
-    freq_map = {"Daily": "D", "Weekly": "W-MON", "Monthly": "ME"}
-    grouper = pd.Grouper(key="timestamp", freq=freq_map[resolution])
-
-    summary_agg_dict: dict = {
-        "Total Consumption": ("consumption_kwh", "sum"),
-        "Total Flexible Cost": ("total_cost_flexible", "sum"),
-        "Total Static Cost": ("total_cost_static", "sum")
-    }
-    df_summary = df.groupby(grouper).agg(**summary_agg_dict).reset_index()
-    df_summary = df_summary[df_summary["Total Consumption"] > 0.01] # Filter out empty periods
+    render_cost_comparison_tab(df, mode="basic")
     
-    df_summary["Difference (€)"] = df_summary["Total Static Cost"] - df_summary["Total Flexible Cost"]
-    df_summary["Period"] = df_summary["timestamp"].dt.strftime("%Y-%m-%d" if resolution == "Daily" else "%Y-%U" if resolution == "Weekly" else "%Y-%m")
-    return df_summary
+# --- Tab: Cost Comparison ---
+def _display_summary_table(df_summary: pd.DataFrame, is_granular_data: bool):
+    """Helper to display and style the main summary dataframe."""
+    difference_formatter = lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}"
+    granular_col_format = {"Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"}
+    regular_col_format = {"Total Consumption": "{:,.2f} kWh", "Total Static Cost": "€{:.2f}"}
+
+    if is_granular_data:
+        cols_to_show = ["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]
+        styler = df_summary[cols_to_show].style
+        styler = styler.map(difference_formatter, subset=["Difference (€)"]) #type: ignore
+        styler = styler.format(granular_col_format)
+    else:
+        cols_to_show = ["Period", "Total Consumption", "Total Static Cost"]
+        styler = df_summary[cols_to_show].style
+        styler = styler.format(regular_col_format)
+        
+    st.dataframe(styler, hide_index=True, use_container_width=True)
+    return cols_to_show, granular_col_format, regular_col_format, difference_formatter
 
 def _compute_col_vals(df: pd.DataFrame, is_granular_data: bool, func, func_name: str) -> pd.DataFrame:
     """Computes aggregated column values using the provided function. """
@@ -467,14 +406,11 @@ def _compute_col_vals(df: pd.DataFrame, is_granular_data: bool, func, func_name:
     return pd.DataFrame([result])
 
 
-def render_cost_comparison_tab(df: pd.DataFrame):
+def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
     """Renders the content for the 'Cost Comparison' tab."""
+    # Lazily import to avoid circular dependency
+    from methods.analysis import compute_cost_comparison_data, compute_cumulative_savings_data
     
-    # Lambda function to format the difference for all tables
-    difference_formatter = lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}"
-    granular_col_format = {"Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"}
-    regular_col_format = {"Total Consumption": "{:,.2f} kWh", "Total Static Cost": "€{:.2f}"}
-
     logger.log("Rendering Cost Comparison Tab")
 
     is_granular_data = calculate_granular_data(df)
@@ -482,10 +418,10 @@ def render_cost_comparison_tab(df: pd.DataFrame):
         st.info(t("granular_data_info"))
 
     # In Basic mode, some charts are already shown. Avoid duplication.
-    if st.session_state.get("active_tab") != "Dashboard":
+    if mode == "expert":
         resolution = st.radio(t("cost_comparison_resolution_label"), ("Monthly","Weekly", "Daily"), horizontal=True, key="summary_res")
         
-        df_summary = _compute_cost_comparison_data(df, resolution)
+        df_summary = compute_cost_comparison_data(df, resolution)
         if df_summary.empty:
             st.warning(t("no_data_for_period"))
             return
@@ -495,10 +431,8 @@ def render_cost_comparison_tab(df: pd.DataFrame):
         with col1:
             st.subheader(t("total_costs_per_period_header"))
             st.markdown(t("total_costs_per_period_markdown"))
-            y_cols_total = ["Total Flexible Cost", "Total Static Cost"] if is_granular_data else ["Total Static Cost"]
-            colors_total = [FLEX_COLOR, STATIC_COLOR] if is_granular_data else [STATIC_COLOR]
-            st.line_chart(df_summary.set_index("Period"), y=y_cols_total, y_label="Total Cost (€)", color=colors_total)
-
+            total_cost_fig = charts.get_total_cost_chart(df_summary, is_granular_data)
+            st.plotly_chart(total_cost_fig, use_container_width=True)
         with col2:
             st.subheader(t("avg_price_per_kwh_header"))
             st.markdown(t("avg_price_per_kwh_markdown"))
@@ -507,235 +441,51 @@ def render_cost_comparison_tab(df: pd.DataFrame):
             if is_granular_data:
                 df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
             
-            y_cols_avg = ["Avg Static Price", "Avg. Flexible Price"] if is_granular_data else ["Avg Static Price"]
-            colors_avg = [STATIC_COLOR, FLEX_COLOR] if is_granular_data else [STATIC_COLOR]
-            st.line_chart(df_summary.set_index("Period"), y=y_cols_avg, y_label="Average Price (€/kWh)", color=colors_avg)
+            avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular_data)
+            st.plotly_chart(avg_price_fig, use_container_width=True)
+
+        # Cumulative Savings
+        st.subheader(t("cumulative_savings_header"))
+        st.markdown(t("cumulative_savings_markdown"))
+        df_cumulative_savings = compute_cumulative_savings_data(df)
+        if not df_cumulative_savings.empty:
+            cumulative_savings_fig = charts.get_cumulative_savings_chart(df_cumulative_savings)
+            st.plotly_chart(cumulative_savings_fig, use_container_width=True)
             
     st.subheader(t("detailed_comparison_table_header"))
     st.text(t("detailed_comparison_table_markdown"), help=t("detailed_comparison_table_help"))
     
     # Main DataFrame
-    df_summary = _compute_cost_comparison_data(df, "Monthly") # Default to monthly for the table
-    if is_granular_data:
-        cols_to_show = ["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]
-        styler = df_summary[cols_to_show].style
-        styler = styler.map(difference_formatter, subset=["Difference (€)"]) #type: ignore
-        styler = styler.format(granular_col_format)
-    else:
-        cols_to_show = ["Period", "Total Consumption", "Total Static Cost"]
-        styler = df_summary[cols_to_show].style
-        styler = styler.format(regular_col_format)
-        
-    st.dataframe(styler, hide_index=True, use_container_width=True)
+    df_summary = compute_cost_comparison_data(df, "Monthly") # Default to monthly for the table
+    cols_to_show, granular_format, regular_format, diff_formatter = _display_summary_table(df_summary, is_granular_data)
 
     # Calculate totals
     df_totals = _compute_col_vals(df_summary, is_granular_data, sum, "Total")
     df_means = _compute_col_vals(df_summary, is_granular_data, lambda x: x.mean(), "Average")
     df_display = pd.concat([df_totals, df_means], ignore_index=True)
 
-    # Style the totals DataFrame
+    # Style and display the totals DataFrame
     if is_granular_data:
         totals_styler = df_display[cols_to_show].style
-        totals_styler = totals_styler.map(difference_formatter, subset=["Difference (€)"]) #type: ignore
-        totals_styler = totals_styler.format(granular_col_format)
+        totals_styler = totals_styler.map(diff_formatter, subset=["Difference (€)"]) #type: ignore
+        totals_styler = totals_styler.format(granular_format)
     else:
         totals_styler = df_display[cols_to_show].style
-        totals_styler = totals_styler.format(regular_col_format)
+        totals_styler = totals_styler.format(regular_format)
 
     st.text(t("total_and_average_values_text"))
     st.dataframe(totals_styler.hide(axis="index"), hide_index=True, use_container_width=True)
 
 # --- Tab: Usage Patterns ---
 
-@st.cache_data(ttl=3600)
-def _compute_usage_profile_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Computes and caches the proportion and average cost for each usage profile."""
-    logger.log("Computing Usage Profile Data")
-    
-    load_types = ["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]
-    profile_data = []
-    total_kwh = df["consumption_kwh"].sum()
-    intervals_per_day = get_intervals_per_day(df)
-    
-    for load in load_types:
-        kwh = df[load].sum()
-        if kwh > 0.01:
-            avg_price = (df[load] * df["spot_price_eur_kwh"]).sum() / kwh
-            proportion = kwh / total_kwh
-            mean_daily_kwh = df[load].mean() * intervals_per_day
-            profile_data.append({
-                "Profile": load.replace("_kwh", "").replace("_", " ").title(),
-                "kwh": kwh,
-                "kwh_mean": mean_daily_kwh,
-                "avg_price": avg_price,
-                "proportion": proportion
-            })
-    return pd.DataFrame(profile_data)
-
-
-@st.cache_data(ttl=3600)
-def _compute_consumption_quartiles(df: pd.DataFrame, intervals_per_day: int) -> pd.DataFrame:
-    """Computes and caches the usage data for the selected resolution."""
-    
-    logger.log("Computing Consumption Data")
-    
-    # Define the aggregation logic once to be reused.
-    consumption_agg_dict = {
-        "consumption_kwh": [
-            ("q1", lambda x: x.quantile(0.25)),
-            ("median", lambda x: x.quantile(0.50)),
-            ("q3", lambda x: x.quantile(0.75))
-        ]
-    }
-    
-    if intervals_per_day == 24:
-        resolution = "Monthly"
-    else:
-        resolution = "Hourly"
-    
-    config = get_aggregation_config(df, resolution)
-    # Drop NA before aggregation to avoid issues with empty groups
-    df_consumption_quartiles = df.dropna(subset=["consumption_kwh"]).groupby(config["grouper"]).agg(consumption_agg_dict)
-    df_consumption_quartiles.columns = ["Consumption Q1", "Consumption Median", "Consumption Q3"]
-    df_consumption_quartiles.index.name = config["name"]        
-    df_consumption_quartiles.index = df_consumption_quartiles.index.map(config["x_axis_map"])
-    # Reindex to ensure correct chronological order (e.g., Jan, Feb, Mar...)
-    # Then, drop any rows that are all NA, which happens for months with no data.
-    df_consumption_quartiles = df_consumption_quartiles.reindex(config["x_axis_map"].values()).dropna(how="all")
-    
-    return df_consumption_quartiles
-
-@st.cache_data(ttl=3600)
-def _compute_example_day(df: pd.DataFrame, random_day, group: bool = False) -> pd.DataFrame:
-    """Selects a random day and return the data for plotting as well as the DataFrame itself."""
-    logger.log("Computing Example Day")
-
-    df_hour = df[df["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.date == random_day].copy()
-    
-    if not df_hour.empty:
-        df_hour["hour"] = df_hour["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.hour
-
-        # Group by hour and sum the kWh columns
-        if group:
-            df_hour = (
-                df_hour.groupby("hour")[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
-                .sum())
-        else:
-            df_hour = df_hour.set_index("timestamp")[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
-                
-        df_hour = df_hour.rename(columns={
-                "base_load_kwh": "Base Load",
-                "regular_load_kwh": "Regular Load",
-                "peak_load_kwh": "Peak Load"
-            })
-    
-        return df_hour
-    else:
-        return pd.DataFrame()
-    
-st.cache_resource(ttl=3600, show_spinner=True)
-def _fit_forecast_model(df: pd.DataFrame) -> tuple[Prophet|None, pd.DataFrame]:
-    """Fits the Prophet model on provided data. Prophet doc: https://facebook.github.io/prophet/."""
-    
-    if "timestamp" not in df.columns:
-        return None, pd.DataFrame()
-    
-    # Resample to daily data and format for Prophet ("ds", "y")
-    df_daily = df.resample("D", on="timestamp")["consumption_kwh"].sum().reset_index().copy()
-    df_daily["timestamp"] = df_daily["timestamp"].dt.tz_localize(None)
-    df_daily = df_daily.rename(columns={"timestamp": "ds", "consumption_kwh": "y"})
-    df_daily.loc[df_daily["y"] == 0, "y"] = pd.NA
-
-    # Prophet requires a minimum of 2 data points, but more is needed for seasonality.
-    if len(df_daily) < 30:
-        return None, pd.DataFrame()
-
-    # Outliers
-    absence_days = pd.DataFrame({
-        "holiday": "absence",
-        "ds": df_daily[df_daily["y"] == 0]["ds"],
-        "lower_window": 0, # No days to extend
-        "upper_window": 0,
-        }
-    )
-    
-    holidays = pd.concat([absence_days], ignore_index=True)
-    
-    # Configure and train the Prophet model.
-    # Check for at least a year for yearly seasonality, otherwise disable it.
-    use_yearly_seasonality = len(df_daily) >= 365
-    
-    model = Prophet(holidays=holidays, yearly_seasonality=use_yearly_seasonality)
-    model.add_country_holidays(country_name="AT")
-    
-    if not use_yearly_seasonality:
-        model.add_seasonality(name="monthly", period=30.5, fourier_order=5)
-    
-    #model.add_regressor("spot_price_eur_kwh")
-    model.fit(df_daily)
-    
-    return model, df_daily
-
-@st.cache_data(ttl=3600)
-def _compute_percent_change(df_daily: pd.DataFrame, forecast: pd.DataFrame) -> float:
-    """Computes the percentage change of a DataFrame with daily values by the incline of a linear regression model. """
-    logger.log("Computing Percent Change")
-    # Analyze the underlying trend from the model"s components. Isolate the trend component within the historical data range
-    historical_trend = forecast[forecast['ds'].isin(df_daily['ds'])]['trend']
-    
-    # Prepare data for regression: x is time, y is the trend value
-    x_values = np.arange(len(historical_trend))
-    y_values = historical_trend.values
-    
-    # Fit a 1st-degree polynomial (linear regression) and get the slope which represents the average daily change in the trend.
-    slope, _ = np.polyfit(x_values, y_values, 1)
-    
-    # Calculate the total change over the period based on this average slope
-    total_change_over_period = slope * len(historical_trend)
-
-    # Calculate percentage change relative to the average consumption for a stable metric
-    avg_consumption = df_daily['y'].mean()
-    if avg_consumption > 0:
-        percent_change = (total_change_over_period / avg_consumption) * 100
-    else:
-        percent_change = 0
-    
-    return percent_change
-
-
-@st.cache_data(ttl=3600)
-def _compute_consumption_trend_and_forecast(df: pd.DataFrame, forcast_periods: int = 90):
-    """ Analyzes and forecasts daily consumption using Prophet to account for seasonality.  """
-    logger.log("Computing Consumption Trend and Forecast with Prophet")
-    
-    model, df_daily = _fit_forecast_model(df)
-    if model is None:
-        return None
-
-    # Create a future dataframe and make a forecast
-    future = model.make_future_dataframe(periods=forcast_periods, freq="D")
-    forecast = model.predict(future)
-
-    # Clean the forecast data by ensuring that consumption predictions do not fall below zero.
-    for col in ["yhat", "yhat_lower", "yhat_upper", "trend"]:
-        if col in forecast.columns:
-            forecast[col] = forecast[col].clip(0)
-            
-    percent_change = _compute_percent_change(df_daily, forecast)
-
-    # Classify the trend
-    if abs(percent_change) < THRESHOLD_STABLE_TREND:
-        trend_description = "Stable"
-    elif percent_change > 0:
-        trend_description = "Increasing"
-    else:
-        trend_description = "Decreasing"
-        
-    return df_daily, forecast, trend_description, percent_change
-
-
 def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_threshold: float):
     """Renders the content for the 'Usage Patterns' tab."""
+    # Lazily import to avoid circular dependency
+    from methods.analysis import (
+        compute_consumption_quartiles, compute_price_distribution_data,
+        compute_consumption_trend_and_forecast, fit_forecast_model,
+        compute_usage_profile_data, compute_example_day
+    )
     
     # Allow filtering by day type
     df_filtered = df[df["consumption_kwh"] > 0].copy()
@@ -753,7 +503,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
     intervals = get_intervals_per_day(df)
     
     # Consumption Over Time
-    df_consumption_day = _compute_consumption_quartiles(df_filtered, intervals)
+    df_consumption_day = compute_consumption_quartiles(df_filtered, intervals)
     
     st.subheader(t("consumption_over_time_header"))
     
@@ -761,68 +511,66 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
     st.markdown(f"#### {t('daily_consumption_header')}\n{t('daily_consumption_markdown')}")
 
     if not df_consumption_day.empty:
-        consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals)
+        df_median_spot = compute_price_distribution_data(df_filtered, "Hourly")
+        consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals, df_median_spot)
         st.plotly_chart(consumption_fig, use_container_width=True)
         
     # Trend Visualization and Forecast
     try:
+        st.subheader(t("consumption_trend_forecast_header"))
         if day_filter != "All Days":
-            # Forecasting is complex with filtered days, so we skip it.
-            # A log message is already present from the original code.
-            pass
+            st.info("Forecasting is only available when 'All Days' are selected.")
         else:
-            st.subheader(t("consumption_trend_forecast_header"))
             st.markdown(t("consumption_trend_forecast_markdown"))
+            col1, _, _, col2 = st.columns(4) # Use 4 columns such that the metric is on the very right of the screen.
 
-        col1, _, _, col2 = st.columns(4) # Use 4 columns such that the metric is on the very right of the screen.
-
-        # Configuration for the forecast.
-        with col1:
-            days_in_dataset = (df_filtered["timestamp"].max() - df_filtered["timestamp"].min()).days
-            
-            # Set the default value for the slider based on the number of days in the dataset
-            max_value = 365
-            if days_in_dataset < 90: 
-                value = 30
+            # Configuration for the forecast.
+            with col1:
+                days_in_dataset = (df_filtered["timestamp"].max() - df_filtered["timestamp"].min()).days
                 
-            elif days_in_dataset < 365:
-                value = 90
+                # Set the default value for the slider based on the number of days in the dataset
+                max_value = 365
+                if days_in_dataset < 90: 
+                    value = 30
+                    
+                elif days_in_dataset < 365:
+                    value = 90
+                else:
+                    value = 180
+                    max_value = 365*2
+                
+                forecast_days = st.slider(t("forecast_slider_label"), min_value=30, max_value=max_value, value=value, step=10, key="forecast_days", width=300)
+
+            # Calculation the trend data. The fitted model is cached such that only the forecast is recomputed (efficient!).
+            trend_data = compute_consumption_trend_and_forecast(df_filtered, forecast_days)
+
+            # Display Results
+            if trend_data:
+                df_daily_trend, df_forecast, trend_description, trend_metric = trend_data
+                model, _ = fit_forecast_model(df_filtered) # We need the model for the components
+
+                # Display the summary metric first, as a key insight
+                with col2:
+                    st.metric(label=t("underlying_consumption_trend_label"),
+                        value=trend_description,
+                        delta=f"{trend_metric:.1f}% change over period",
+                        delta_color=("inverse" if trend_metric < 0 else "normal"),
+                        label_visibility="hidden"
+                    )
+
+                # Display the detailed chart
+                trend_fig = charts.get_trend_chart(df_daily_trend, df_forecast)
+                st.plotly_chart(trend_fig, use_container_width=True)
+
+                # Expander for seasonality components
+                with st.expander(t("show_seasonality_details")):
+                    st.markdown(t("seasonality_details_markdown"))
+                    if model:
+                        seasonality_charts = charts.get_seasonality_charts(model, df_forecast)
+                        st.plotly_chart(seasonality_charts, use_container_width=True, key=f"forecast_details")
+
             else:
-                value = 180
-                max_value = 365*2
-            
-            forecast_days = st.slider(t("forecast_slider_label"), min_value=30, max_value=max_value, value=value, step=10, key="forecast_days", width=300)
-
-        # Calculation the trend data. The fitted model is cached such that only the forecast is recomputed (efficient!).
-        trend_data = _compute_consumption_trend_and_forecast(df_filtered, forecast_days)
-
-        # Display Results
-        if trend_data:
-            df_daily_trend, df_forecast, trend_description, trend_metric = trend_data
-            model, _ = _fit_forecast_model(df_filtered) # We need the model for the components
-
-            # Display the summary metric first, as a key insight
-            with col2:
-                st.metric(label=t("underlying_consumption_trend_label"),
-                    value=trend_description,
-                    delta=f"{trend_metric:.1f}% change over period",
-                    delta_color=("inverse" if trend_metric < 0 else "normal"),
-                    label_visibility="hidden"
-                )
-
-            # Display the detailed chart
-            trend_fig = charts.get_trend_chart(df_daily_trend, df_forecast)
-            st.plotly_chart(trend_fig, use_container_width=True)
-
-            # Expander for seasonality components
-            with st.expander(t("show_seasonality_details")):
-                st.markdown(t("seasonality_details_markdown"))
-                if model:
-                    seasonality_charts = charts.get_seasonality_charts(model, df_forecast)
-                    st.plotly_chart(seasonality_charts, use_container_width=True, key=f"forecast_details")
-
-        else:
-            st.info(t("no_trend_info"))
+                st.info(t("no_trend_info"))
 
     except AssertionError as e:
         logger.log(f"Error in Forecasting: {e}", severity=1)
@@ -840,7 +588,10 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
     # Consumption & Usage Profile (Marimekko Chart)
     st.subheader(t("usage_profile_header"))
     st.markdown(t("usage_profile_markdown"))
-    profile_data = _compute_usage_profile_data(df_filtered)
+    profile_data = compute_usage_profile_data(df_filtered)
+
+    # Define columns here so they are always available
+    col1, col2, _, _ = st.columns(4)
 
     # Display Thresholds
     col1.metric(t("base_load_threshold_metric"), f"{base_threshold:.3f} kWh", help=t("base_load_threshold_help"))
@@ -867,44 +618,25 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
             st.rerun()
         
         intervals = get_intervals_per_day(df_filtered)
-        df_day = _compute_example_day(df_filtered, st.session_state.random_day, group=False)
+        df_day = compute_example_day(df_filtered, st.session_state.random_day, group=False)
         # Ensure correct stacking order for the bar chart: Base (bottom), Regular, Peak (top).
         df_day = df_day[["Base Load", "Regular Load", "Peak Load"]]
         day_str = st.session_state.random_day.strftime('%A, %Y-%m-%d')
-        st.caption(t("example_day_caption", day=day_str, total_kwh=df_day.sum().sum()))
-        example_day_fig = charts.plot_example_day(df_day, intervals, BASE_COLOR, REGULAR_COLOR, PEAK_COLOR)
+        st.caption(t("example_day_caption", day=day_str, total_kwh=df_day.to_numpy().sum()))
+        example_day_fig = charts.get_example_day_chart(df_day, intervals)
         st.plotly_chart(example_day_fig, use_container_width=True)
-        #st.bar_chart(df_day, color=[BASE_COLOR, REGULAR_COLOR, PEAK_COLOR], x_label="Hour of Day", y_label="Consumption (kWh)")
 
 # --- Tab: Yearly Summary ---
 
-@st.cache_data(ttl=3600)
-def _compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
-    """Computes and caches the yearly summary of the data."""
-    logger.log("Computing Yearly Summary")
-    df["Year"] = df["timestamp"].dt.year
-    yearly_summary_agg_dict = {
-        "Total Consumption": ("consumption_kwh", "sum"),
-        "Total Static Cost": ("total_cost_static", "sum")
-    }
-    
-    is_granular_data = calculate_granular_data(df)
-    if is_granular_data:
-        yearly_summary_agg_dict["Total Flexible Cost"] = ("total_cost_flexible", "sum")
-        
-    yearly_agg = df.groupby("Year").agg(**yearly_summary_agg_dict).reset_index() # type: ignore
-    
-    if not yearly_agg.empty and yearly_agg["Total Consumption"].sum() > 0:
-        yearly_agg["Avg Static Price"] = yearly_agg["Total Static Cost"] / yearly_agg["Total Consumption"]
-        if is_granular_data:
-            yearly_agg["Avg. Flex Price"] = yearly_agg["Total Flexible Cost"] / yearly_agg["Total Consumption"]
-
-    return yearly_agg
-
 def render_yearly_summary_tab(df: pd.DataFrame):
     """Renders the content for the 'Yearly Summary' tab."""
+    # Lazily import to avoid circular dependency
+    from methods.analysis import compute_yearly_summary
+
     st.subheader(t("yearly_summary_header"))
-    yearly_agg = _compute_yearly_summary(df)
+    st.text(t("yearly_summary_text"))
+
+    yearly_agg = compute_yearly_summary(df)
     if yearly_agg.empty:
         st.warning(t("no_yearly_summary_data"))
         return
@@ -943,6 +675,8 @@ def _compute_download_data(df: pd.DataFrame) -> tuple[bytes, bytes]:
 def render_download_tab(df: pd.DataFrame, start_date: date, end_date: date):
     """Renders the content for the Download tab."""
     excel_full_data, excel_spot_data = _compute_download_data(df)
+    
+    st.subheader(t("download_header"))
     
     col1, col2 = st.columns(2, border=True)
     with col1:
@@ -987,31 +721,20 @@ def render_faq_tab():
         
     st.info(t("faq_footer_info"))
 
+# --- About Tab ---
+def render_about_tab():
+    """Renders the content for the 'About' tab by displaying the readme.md file."""
+    st.header("About This Project")
+    try:
+        with open("readme.md", "r", encoding="utf-8") as f:
+            st.markdown(f.read(), unsafe_allow_html=True)
+    except FileNotFoundError:
+        st.warning("readme.md file not found.")
 # --- Footer ---
 @st.cache_data
 def render_footer():
     """Renders the footer with information about the project and further links."""
-    footer_css = """
-    <style>
-    /* Add padding to the bottom of the main content area to prevent overlap with the fixed footer. */
-    .stApp {
-        padding-bottom: 5rem;
-    }
-
-    .footer {
-        position: fixed; 
-        left: 0;
-        bottom: 0;
-        z-index: 999; /* Ensure footer is on top */
-        width: 100%;
-        background-color: "var(--secondary-background-color)";
-        background-color: var(--secondary-background-color);
-        color: var(--text-color);
-        text-align: center;
-        padding: 10px;
-        border-top: 1px solid var(--gray-30); 
-    }
-    </style>
-    """
-    st.markdown(footer_css, unsafe_allow_html=True)
+    
+    #st.markdown(footer_css, unsafe_allow_html=True)
+    st.markdown("---")
     st.markdown(f'<div class="footer"><p>{t("footer_text")}</p></div>', unsafe_allow_html=True)

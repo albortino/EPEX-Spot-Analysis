@@ -22,6 +22,7 @@ class Tariff:
     monthly_fee: float
     price_kwh_pct: float = 0.0 # Percentage on-top for flexible tariffs
     link: str = ""
+    usage_tax: bool = False
 
 class TariffManager:
     """Handles loading tariffs and calculating costs."""
@@ -59,7 +60,7 @@ class TariffManager:
         """Returns a dictionary of flexible tariffs including a default custom option."""
         
         tariffs = {tariff.name: tariff for tariff in self.flex_tariffs}
-        tariffs["Custom"] = Tariff(name="Custom", type=TariffType.FLEXIBLE, price_kwh=0.0215, monthly_fee=2.40, price_kwh_pct=0.0)
+        tariffs["Custom"] = Tariff(name="Custom", type=TariffType.FLEXIBLE, price_kwh=0.0179, monthly_fee=2.40, price_kwh_pct=0.0)
         return tariffs
 
     def get_static_tariffs_with_custom(self) -> Dict[str, Tariff]:
@@ -91,16 +92,24 @@ class TariffManager:
         
         # Calculate the proportion of the whole monthly fee for every row (=time resultion)
         monthly_fee = (tariff.monthly_fee / df["days_in_month"]) / intervals_per_day
+        
+        price_kwh = tariff.price_kwh
+        if tariff.usage_tax:
+            price_kwh *= 1.06
 
-        return df["consumption_kwh"] * tariff.price_kwh + monthly_fee
+        return df["consumption_kwh"] * price_kwh + monthly_fee
 
     def _calculate_flexible_cost(self, df: pd.DataFrame, tariff: Tariff) -> pd.Series:
         """Calculate the flexible costs based on a tariff and a dataframe with consumption as well as spot price data."""
         
         df, intervals_per_day = self._prepare_df(df)
         
-        # Calculate total cost per time resolution (hour or 15 minutes) for both tariffs.
-        flex_spot_price_component = df["spot_price_eur_kwh"] * (1 + tariff.price_kwh_pct / 100) + tariff.price_kwh
+        price_kwh = tariff.price_kwh
+            
+        flex_spot_price_component = df["spot_price_eur_kwh"] * (1 + tariff.price_kwh_pct / 100) + price_kwh
+        
+        if tariff.usage_tax:
+            flex_spot_price_component *= 1.06
         
         # Calculate the proportion of the whole monthly fee for every row (=time resultion)
         monthly_fee = (tariff.monthly_fee / df["days_in_month"]) / intervals_per_day

@@ -1,6 +1,6 @@
 import pandas as pd
 import io
-from datetime import date
+from datetime import date, timedelta
 import streamlit as st
 from methods.config import MIN_DATE, TODAY_IS_MAX_DATE
 
@@ -81,4 +81,26 @@ def calculate_granular_data(df: pd.DataFrame) -> bool:
 def filter_dataframe(df: pd.DataFrame, start_date: date, end_date: date):
     """Filters a DataFrame based on start and end dates."""
     mask = (df["timestamp"].dt.date >= start_date) & (df["timestamp"].dt.date <= end_date)
+    return df.loc[mask]
+
+def filter_by_quarter(df: pd.DataFrame, selected_quarter: str) -> pd.DataFrame:
+    """
+    Filters a DataFrame to include only data from the selected quarter,
+    regardless of the year.
+    """
+    if selected_quarter == "All":
+        return df
+
+    quarter_map = {
+        "Q1": (1, 3),  # January-March
+        "Q2": (4, 6),  # April-June
+        "Q3": (7, 9),  # July-September
+        "Q4": (10, 12) # October-December
+    }
+
+    start_month, end_month = quarter_map[selected_quarter]
+
+    mask = (df["timestamp"].dt.month >= start_month) & \
+           (df["timestamp"].dt.month <= end_month)
+    
     return df.loc[mask]
