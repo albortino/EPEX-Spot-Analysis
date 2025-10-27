@@ -9,7 +9,7 @@ import io
 from prophet import Prophet
 
 from methods.config import *
-from methods.tariffs import Tariff, TariffManager
+from methods.tariffs import Tariff, TariffManager, TariffType
 from methods.utils import get_min_max_date, to_excel, get_intervals_per_day, get_aggregation_config, calculate_granular_data
 import methods.data_loader as data_loader
 import methods.charts as charts
@@ -149,11 +149,11 @@ def _compare_all_tariffs(df_consumption: pd.DataFrame, _tariff_manager: TariffMa
     
     return final_flex_tariff, final_static_tariff
 
-def _return_tariff_selection(_tariff_manager: TariffManager, expanded: bool = True) -> tuple[Tariff, Tariff]:
+def _render_tariff_selection_widgets(_tariff_manager: TariffManager, expanded: bool = True) -> tuple[Tariff, Tariff]:
     """Renders tariff selection expanders in the UI for user customization."""
     logger.log("Rendering Tariff Selection")
     
-    final_tariffs = []
+    final_tariffs: list[Tariff] = []
     options = [
         (t("flexible_plan_title"), _tariff_manager.get_flex_tariffs_with_custom()),
         (t("static_plan_title"), _tariff_manager.get_static_tariffs_with_custom())
@@ -161,30 +161,50 @@ def _return_tariff_selection(_tariff_manager: TariffManager, expanded: bool = Tr
 
     for title, tariff_options in options:
         with st.expander(title, expanded=expanded):
-            tariff_type = title.split(" ")[0]
+            # Determine tariff type from the first word of the title
+            tariff_type_str = title.split(" ")[0]
+
             # Let user select a predefined tariff or 'Custom'
-            selected_name = st.selectbox(t("select_tariff_type", tariff_type=tariff_type), options=list(tariff_options.keys()), index=len(tariff_options) - 1)
+            selected_name = st.selectbox(
+                t("select_tariff_type", tariff_type=tariff_type_str), 
+                options=list(tariff_options.keys()), 
+                index=len(tariff_options) - 1,
+                key=f"select_{tariff_type_str}"
+            )
             selected_tariff = tariff_options[selected_name]
             
             # Display input fields pre-filled with the selected tariff's data
-            price_kwh = st.number_input(t("on_top_price"), value=selected_tariff.price_kwh, min_value=0.0, step=0.001, format="%.4f", key=f"{tariff_type}_price")
+            price_kwh = st.number_input(t("on_top_price"), value=selected_tariff.price_kwh, min_value=0.0, step=0.001, format="%.4f", key=f"{tariff_type_str}_price")
             price_kwh_pct = 0.0
-            if tariff_type == "Flexible":
-                price_kwh_pct = st.number_input(t("variable_price_pct"), value=selected_tariff.price_kwh_pct, min_value=0.0, max_value=100.0, step=1.0, format="%.1f", key=f"{tariff_type}_pct")
+            if selected_tariff.type == TariffType.FLEXIBLE:
+                price_kwh_pct = st.number_input(t("variable_price_pct"), value=selected_tariff.price_kwh_pct, min_value=0.0, max_value=100.0, step=1.0, format="%.1f", key=f"{tariff_type_str}_pct")
             
-            monthly_fee = st.number_input(t("monthly_fee"), value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{tariff_type}_fee")
+            monthly_fee = st.number_input(t("monthly_fee"), value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{tariff_type_str}_fee")
             
             # Create a new Tariff object with the potentially modified values
             final_tariffs.append(
                 Tariff(name=selected_name, type=selected_tariff.type, price_kwh=price_kwh, monthly_fee=monthly_fee, price_kwh_pct=price_kwh_pct)
             )
-    return tuple(final_tariffs)
+    
+    # Ensure the return order is always (flex, static)
+    if final_tariffs[0].type == TariffType.FLEXIBLE:
+        return final_tariffs[0], final_tariffs[1]
+    else:
+        return final_tariffs[1], final_tariffs[0]
 
-def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager) -> tuple[str, date, date, Tariff, Tariff, float]:
+def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, str, date, date, float]:
     """Renders all sidebar inputs and returns the configuration values."""
     logger.log("Rendering Sidebar")
     with st.sidebar:
         st.header(t("configuration"))
+
+        # Mode Selection
+        is_expert_mode = st.toggle(
+            "Expert Mode",
+            value=False,
+            help="Enable for in-depth analysis and more configuration options."
+        )
+        mode = "Expert" if is_expert_mode else "Basic"
         
         # 1. Country Selection for EPEX
         country_select = {"Austria": "at", "Germany": "de"}
@@ -219,26 +239,35 @@ def render_sidebar_inputs(df: pd.DataFrame, tariff_manager: TariffManager) -> tu
             # Fallback for the rare case where only one date is returned
             start_date, end_date = selected_range[0], max_date
         
-        # 3. Tariff Plan Selection
-        with st.expander(t("select_tariff_plan"), expanded=True):
-            st.text(t("tariff_plan_help"))
-            
-            compare_cheapest = st.checkbox(t("compare_cheapest_tariffs"), value=False, help=t("compare_cheapest_tariffs_help"))
-            if compare_cheapest:
-                final_flex_tariff, final_static_tariff = _compare_all_tariffs(df, tariff_manager, awattar_country)
-                flex_info = t("cheapest_flex_tariff_info", tariff_name=final_flex_tariff.name) if final_flex_tariff else t("no_predefined_flex_tariffs")
-                static_info = t("cheapest_static_tariff_info", tariff_name=final_static_tariff.name) if final_static_tariff else t("no_predefined_static_tariffs")
-                st.info(f"{flex_info}\n\n{static_info}")
-
-            else:
-                final_flex_tariff, final_static_tariff = _return_tariff_selection(tariff_manager, expanded=False)
-            
-        # 4. Load Shifting Simulation
+        # 3. Load Shifting Simulation
         with st.expander(t("simulate_consumption_shifting"), expanded=False):
             st.markdown(t("simulate_shifting_markdown"), help=t("simulate_shifting_help"))
             shift_percentage = st.slider(t("shift_peak_load_slider"), min_value=0, max_value=100, value=0, step=5)
 
-        return awattar_country, start_date, end_date, final_flex_tariff, final_static_tariff, shift_percentage
+        return mode, awattar_country, start_date, end_date, shift_percentage
+
+def render_tariff_selection_header(df: pd.DataFrame, tariff_manager: TariffManager, country: str) -> tuple[Tariff, Tariff]:
+    """Renders the main tariff selection UI on the main page."""
+    with st.container(border=True):
+        st.markdown(t("tariff_plan_help"))
+
+        compare_cheapest = st.checkbox(t("compare_cheapest_tariffs"), value=True, help=t("compare_cheapest_tariffs_help"))
+
+        if compare_cheapest:
+            final_flex_tariff, final_static_tariff = _compare_all_tariffs(df, tariff_manager, country)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                flex_info = t("cheapest_flex_tariff_info", tariff_name=final_flex_tariff.name) if final_flex_tariff else t("no_predefined_flex_tariffs")
+                st.info(flex_info)
+            with col2:
+                static_info = t("cheapest_static_tariff_info", tariff_name=final_static_tariff.name) if final_static_tariff else t("no_predefined_static_tariffs")
+                st.info(static_info)
+            
+            return final_flex_tariff, final_static_tariff
+        else:
+            final_flex_tariff, final_static_tariff = _render_tariff_selection_widgets(tariff_manager, expanded=False)
+            return final_flex_tariff, final_static_tariff
 
 # --- Main Page Components ---
 
@@ -354,6 +383,51 @@ def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     heatmap_fig = charts.get_heatmap(heatmap_data)
     st.plotly_chart(heatmap_fig, use_container_width=True)
 
+def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_threshold: float, peak_threshold: float):
+    """Renders the content for the 'Basic Dashboard' tab."""
+    logger.log("Rendering Basic Dashboard Tab")
+
+    # 1. Price Chart (Monthly)
+    st.subheader(t("price_over_time_header"))
+    st.markdown(t("price_over_time_markdown"))
+    df_price = _compute_price_distribution_data(df, "Monthly")
+    price_fig = charts.get_price_chart(df_price, pd.Series([static_tariff.price_kwh]*len(df.index)))
+    st.plotly_chart(price_fig, use_container_width=True)
+
+    # 2. Average Price per kWh
+    st.subheader(t("avg_price_per_kwh_header"))
+    st.markdown(t("avg_price_per_kwh_markdown"))
+    df_summary = _compute_cost_comparison_data(df, "Monthly")
+    is_granular_data = calculate_granular_data(df)
+    if not df_summary.empty:
+        df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
+        if is_granular_data:
+            df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
+        
+        y_cols_avg = ["Avg Static Price", "Avg. Flexible Price"] if is_granular_data else ["Avg Static Price"]
+        colors_avg = [STATIC_COLOR, FLEX_COLOR] if is_granular_data else [STATIC_COLOR]
+        st.line_chart(df_summary.set_index("Period"), y=y_cols_avg, y_label="Average Price (€/kWh)", color=colors_avg)
+
+    # 3. Daily Usage
+    st.subheader(t("daily_consumption_header"))
+    st.markdown(t("daily_consumption_markdown"))
+    intervals = get_intervals_per_day(df)
+    df_consumption_day = _compute_consumption_quartiles(df, intervals)
+    if not df_consumption_day.empty:
+        consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals)
+        st.plotly_chart(consumption_fig, use_container_width=True)
+
+    # 4. Usage Profile
+    if intervals > 24: # Only for granular data
+        st.subheader(t("usage_profile_header"))
+        st.markdown(t("usage_profile_markdown"))
+        profile_data = _compute_usage_profile_data(df)
+        if not profile_data.empty:
+            marimekko_fig = charts.get_marimekko_chart(profile_data)      
+            st.plotly_chart(marimekko_fig, use_container_width=True)
+
+    # 5. Comparison Table
+    render_cost_comparison_tab(df)
 # --- Tab: Cost Comparison ---
 
 @st.cache_data(ttl=3600)
@@ -399,7 +473,7 @@ def render_cost_comparison_tab(df: pd.DataFrame):
     # Lambda function to format the difference for all tables
     difference_formatter = lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}"
     granular_col_format = {"Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"}
-    regular_col_format = {"Total Consumption": "{:,.2f} kWh", "Total Static Cost": "€{:,.2f}"}
+    regular_col_format = {"Total Consumption": "{:,.2f} kWh", "Total Static Cost": "€{:.2f}"}
 
     logger.log("Rendering Cost Comparison Tab")
 
@@ -407,38 +481,41 @@ def render_cost_comparison_tab(df: pd.DataFrame):
     if not is_granular_data:
         st.info(t("granular_data_info"))
 
-    resolution = st.radio(t("cost_comparison_resolution_label"), ("Monthly","Weekly", "Daily"), horizontal=True, key="summary_res")
-    
-    df_summary = _compute_cost_comparison_data(df, resolution)
-    if df_summary.empty:
-        st.warning(t("no_data_for_period"))
-        return
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.subheader(t("total_costs_per_period_header"))
-        st.markdown(t("total_costs_per_period_markdown"))
-        y_cols_total = ["Total Flexible Cost", "Total Static Cost"] if is_granular_data else ["Total Static Cost"]
-        colors_total = [FLEX_COLOR, STATIC_COLOR] if is_granular_data else [STATIC_COLOR]
-        st.line_chart(df_summary.set_index("Period"), y=y_cols_total, y_label="Total Cost (€)", color=colors_total)
-
-    with col2:
-        st.subheader(t("avg_price_per_kwh_header"))
-        st.markdown(t("avg_price_per_kwh_markdown"))
-        df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
+    # In Basic mode, some charts are already shown. Avoid duplication.
+    if st.session_state.get("active_tab") != "Dashboard":
+        resolution = st.radio(t("cost_comparison_resolution_label"), ("Monthly","Weekly", "Daily"), horizontal=True, key="summary_res")
         
-        if is_granular_data:
-            df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
-        
-        y_cols_avg = ["Avg Static Price", "Avg. Flexible Price"] if is_granular_data else ["Avg Static Price"]
-        colors_avg = [STATIC_COLOR, FLEX_COLOR] if is_granular_data else [STATIC_COLOR]
-        st.line_chart(df_summary.set_index("Period"), y=y_cols_avg, y_label="Average Price (€/kWh)", color=colors_avg)
+        df_summary = _compute_cost_comparison_data(df, resolution)
+        if df_summary.empty:
+            st.warning(t("no_data_for_period"))
+            return
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader(t("total_costs_per_period_header"))
+            st.markdown(t("total_costs_per_period_markdown"))
+            y_cols_total = ["Total Flexible Cost", "Total Static Cost"] if is_granular_data else ["Total Static Cost"]
+            colors_total = [FLEX_COLOR, STATIC_COLOR] if is_granular_data else [STATIC_COLOR]
+            st.line_chart(df_summary.set_index("Period"), y=y_cols_total, y_label="Total Cost (€)", color=colors_total)
+
+        with col2:
+            st.subheader(t("avg_price_per_kwh_header"))
+            st.markdown(t("avg_price_per_kwh_markdown"))
+            df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
+            
+            if is_granular_data:
+                df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
+            
+            y_cols_avg = ["Avg Static Price", "Avg. Flexible Price"] if is_granular_data else ["Avg Static Price"]
+            colors_avg = [STATIC_COLOR, FLEX_COLOR] if is_granular_data else [STATIC_COLOR]
+            st.line_chart(df_summary.set_index("Period"), y=y_cols_avg, y_label="Average Price (€/kWh)", color=colors_avg)
             
     st.subheader(t("detailed_comparison_table_header"))
     st.text(t("detailed_comparison_table_markdown"), help=t("detailed_comparison_table_help"))
     
     # Main DataFrame
+    df_summary = _compute_cost_comparison_data(df, "Monthly") # Default to monthly for the table
     if is_granular_data:
         cols_to_show = ["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]
         styler = df_summary[cols_to_show].style
@@ -464,11 +541,9 @@ def render_cost_comparison_tab(df: pd.DataFrame):
     else:
         totals_styler = df_display[cols_to_show].style
         totals_styler = totals_styler.format(regular_col_format)
-    
-    # Convert to HTML and render without header
-    totals_html = totals_styler.hide(axis="index")
+
     st.text(t("total_and_average_values_text"))
-    st.dataframe(totals_html, hide_index=True, use_container_width=True)
+    st.dataframe(totals_styler.hide(axis="index"), hide_index=True, use_container_width=True)
 
 # --- Tab: Usage Patterns ---
 
@@ -871,15 +946,15 @@ def render_download_tab(df: pd.DataFrame, start_date: date, end_date: date):
     
     col1, col2 = st.columns(2, border=True)
     with col1:
-        st.markdown("Download the full, detailed analysis including consumption classification and cost calculations for both tariff types.")
+        st.markdown(t("download_full_analysis_markdown"))
         st.download_button(
-            label="Download Full Analysis (XLSX)",
+            label=t("download_full_analysis_label"),
             data=excel_full_data,
             file_name=f"electricity_analysis_{start_date}_to_{end_date}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
     with col2:
-        st.markdown("Download only the hourly EPEX spot prices for the selected period.")
+        st.markdown(t("download_spot_prices_markdown"))
         st.download_button(
             label="Download Spot Prices (XLSX)",
             data=excel_spot_data,
