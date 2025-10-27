@@ -1,0 +1,18 @@
+name: epex-spot-sl
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - streamlit
+  - pandas
+  - numpy
+  - plotly
+  - flake8
+  - pytest
+  - matplotlib
+  - xlsxwriter
+  - requests
+  - prophet
+  - watchdog
