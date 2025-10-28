@@ -113,7 +113,7 @@ def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame,
     return df_c, base_load_threshold, peak_sustain_threshold_influenceable
 
 # --- Peak Shifting Simulation ---
-
+@st.cache_data(ttl=60*10)
 def simulate_peak_shifting(df: pd.DataFrame, shift_percentage: float) -> pd.DataFrame:
     """
     Simulates shifting a percentage of peak load from the most expensive times

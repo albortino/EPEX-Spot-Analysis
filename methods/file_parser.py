@@ -405,8 +405,9 @@ class ConsumptionDataParser:
 
         # Apply preprocessing if needed
         if config.preprocess_date_func:
-            df["timestamp_str"] = df["timestamp_str"].apply(self._apply_date_preprocessing)
-
+            # Vectorized operation is much faster than .apply()
+            df["timestamp_str"] = df["timestamp_str"].str.split('-').str[0].str.strip()
+        
         # Parse consumption values
         df["consumption_kwh"] = pd.to_numeric(df["consumption_kwh"].astype(str).str.replace(",", "."), errors="coerce")
         
@@ -449,11 +450,9 @@ class ConsumptionDataParser:
     def _apply_date_preprocessing(self, date_str: str) -> str:
         """
         Apply date preprocessing (simplified version).
+        DEPRECATED: Replaced with a faster vectorized operation in _try_parse.
         """
-        # Handle date range splitting (like "01.01.2023-02.01.2023" -> "01.01.2023")
-        if "-" in date_str and len(date_str.split("-")) == 2:
-            return date_str.split("-")[0].strip()
-        return date_str
+        return date_str.split("-")[0].strip() if "-" in date_str else date_str
 
     def _apply_skip_logic(self, df: pd.DataFrame, skip_func_str: str) -> pd.DataFrame:
         """
@@ -607,6 +606,16 @@ class ConsumptionDataParser:
             # Ensure we have the expected columns
             df_result = df_resampled[["timestamp", "consumption_kwh"]].reset_index(drop=True)
             
+            # --- Memory Optimization ---
+            # Downcast numeric columns to the smallest possible type to save memory
+            df_result["consumption_kwh"] = pd.to_numeric(df_result["consumption_kwh"], downcast="float")
+
+            # Convert object columns to category if they have a low number of unique values
+            for col in df_result.select_dtypes(include=["object"]).columns:
+                if df_result[col].nunique() / len(df_result) < 0.5:
+                    df_result[col] = df_result[col].astype("category")
+            # --- End Memory Optimization ---
+
             if df_result.empty:
                 logger.log("DataFrame is empty after resampling")
             else:

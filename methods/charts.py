@@ -19,7 +19,7 @@ def _get_interval_text(intervals_per_day: int, t) -> str:
         
     return interval_text
 
-def get_price_chart(df: pd.DataFrame, static_price: pd.Series) -> go.Figure:
+def get_price_chart(df: pd.DataFrame, static_price: float) -> go.Figure:
     fig = go.Figure()
 
     # First trace: Q1 (lower bound of the fill)
@@ -34,7 +34,7 @@ def get_price_chart(df: pd.DataFrame, static_price: pd.Series) -> go.Figure:
     fig.add_trace(go.Scatter(x=df.index, y=df["Spot Price Q1"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR_LIGHT), name="1st Quartile (Q1)"))
 
     # Static Price
-    fig.add_trace(go.Scatter(x=df.index, y=static_price, mode="lines", line=dict(color=STATIC_COLOR, width=2), name="Static Tariff"))
+    fig.add_hline(y=static_price, line=dict(color=STATIC_COLOR, width=2), name="Static Tariff")
 
     fig.update_layout(xaxis_title=df.index.name, yaxis_title=t("spot_price_kwh_y_axis"), legend_title_text=t("legend_metrics"), hovermode="x unified")
 

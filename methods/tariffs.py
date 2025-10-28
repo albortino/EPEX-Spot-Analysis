@@ -70,28 +70,24 @@ class TariffManager:
         tariffs["Custom"] = Tariff(name="Custom", type=TariffType.STATIC, price_kwh=0.14, monthly_fee=2.00)
         return tariffs
     
-    def _prepare_df(self, df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
-        """Prepares the dataframe for cost calculation by adding a date column and returning the intervals per day."""
+    def _get_intervals_per_day(self, df: pd.DataFrame) -> int:
+        """Calculates the number of data intervals per day from the dataframe."""
     
         if not "consumption_kwh" in df.columns:
             raise KeyError("Consumption data is missing.")
         
-        if not "date" in df.columns or not "days_in_month" in df.columns:
-            df["date"] = df["timestamp"].dt.date
-            df["days_in_month"] = df["timestamp"].dt.days_in_month
-        
         # Determine the number of entries per day (time resolution)
-        intervals_per_day = df.groupby("date").size().mode().iloc[0]
-                
-        return df, intervals_per_day
+        intervals_per_day = df.groupby(df["timestamp"].dt.date).size().mode().iloc[0]
+        return intervals_per_day
         
     def _calculate_static_cost(self, df: pd.DataFrame, tariff: Tariff) -> pd.Series:
         """Calculates the static costs based on a tariff and a dataframe with consumption data."""
         
-        df, intervals_per_day = self._prepare_df(df)
+        intervals_per_day = self._get_intervals_per_day(df)
+        days_in_month = df["timestamp"].dt.days_in_month
         
         # Calculate the proportion of the whole monthly fee for every row (=time resultion)
-        monthly_fee = (tariff.monthly_fee / df["days_in_month"]) / intervals_per_day
+        monthly_fee = (tariff.monthly_fee / days_in_month) / intervals_per_day
         
         price_kwh = tariff.price_kwh
         if tariff.usage_tax:
@@ -102,7 +98,8 @@ class TariffManager:
     def _calculate_flexible_cost(self, df: pd.DataFrame, tariff: Tariff) -> pd.Series:
         """Calculate the flexible costs based on a tariff and a dataframe with consumption as well as spot price data."""
         
-        df, intervals_per_day = self._prepare_df(df)
+        intervals_per_day = self._get_intervals_per_day(df)
+        days_in_month = df["timestamp"].dt.days_in_month
         
         price_kwh = tariff.price_kwh
             
@@ -112,7 +109,7 @@ class TariffManager:
             flex_spot_price_component *= 1.06
         
         # Calculate the proportion of the whole monthly fee for every row (=time resultion)
-        monthly_fee = (tariff.monthly_fee / df["days_in_month"]) / intervals_per_day
+        monthly_fee = (tariff.monthly_fee / days_in_month) / intervals_per_day
         
         return df["consumption_kwh"] * flex_spot_price_component + monthly_fee
         
