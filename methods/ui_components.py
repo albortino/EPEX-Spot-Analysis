@@ -15,11 +15,33 @@ from methods.logger import logger
 
 # --- Introduction ---
 def render_intro():
-    st.markdown(f"## {t('intro_title')}\n\n{t('intro_subtitle')}")
-    st.info(t('intro_welcome_message'))
-    st.markdown(f"### {t('intro_introduction_header')}\n{t('intro_introduction_text')}\n\n"
-                f"**{t('intro_important_notice')}**")
+    """Renders a modern, card-based introduction for the user."""
+    #st.title(t('intro_title'))
+    st.markdown(f"<h2 style='text-align: center;'>{t('intro_subtitle')}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h6 style='text-align: center;color: #808080;'>{t('intro_subtitle_detail')}</h6>", unsafe_allow_html=True)
+    
+    # Spacing
+    st.container(height=50, border=False)
 
+    
+    col1, col2, col3 = st.columns(3, gap="large")
+
+    with col1:
+        st.markdown(f"<div style='text-align: center;'><h3>{t('intro_step1_header')}</h3><p style='font-size: 2em; margin-bottom: -10px;'>📤</p></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center;'>{t('intro_step1_text')}</div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"<div style='text-align: center;'><h3>{t('intro_step2_header')}</h3><p style='font-size: 2em; margin-bottom: -10px;'>🔍</p></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center;'>{t('intro_step2_text')}</div>", unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"<div style='text-align: center;'><h3>{t('intro_step3_header')}</h3><p style='font-size: 2em; margin-bottom: -10px;'>💡</p></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center;'>{t('intro_step3_text')}</div>", unsafe_allow_html=True)
+    
+    # Spacing
+    st.container(height=75, border=False)
+    
+    st.info(t('intro_welcome_message'), icon="👋")
+    
+    st.warning(f"**{t('intro_important_notice')}**", icon="🔒")
 
 # --- Sidebar and Input Controls ---
 def render_language_selection():
@@ -282,7 +304,9 @@ def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: 
     elif savings < 0: # Only show warning if there are actual losses
         link_text = t("check_cheapest_offer", link=static_tariff.link) if static_tariff.link else ""
         st.warning(t("static_plan_recommended", abs_savings=-savings, link_text=link_text), icon="⚠️")
-    # If savings is 0, no recommendation is strictly needed, or a neutral message could be added.
+    
+    # Spacing
+    st.container(height=50, border=False)
 
 # --- Tab: Spot Price Analysis ---
 
@@ -370,23 +394,44 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     
 # --- Tab: Cost Comparison ---
 def _display_summary_table(df_summary: pd.DataFrame, is_granular_data: bool):
-    """Helper to display and style the main summary dataframe."""
+    """Helper to display and style the main summary DataFrame with internationalized headers."""
     difference_formatter = lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}"
-    granular_col_format = {"Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"}
-    regular_col_format = {"Total Consumption": "{:,.2f} kWh", "Total Static Cost": "€{:.2f}"}
 
+    # Define column names using translations
+    col_names = {
+        "Period": t("col_period"),
+        "Total Consumption": t("col_total_consumption"),
+        "Total Flexible Cost": t("col_total_flex_cost"),
+        "Total Static Cost": t("col_total_static_cost"),
+        "Difference (€)": t("col_difference"),
+        "Avg. Flex Price": t("col_avg_flex_price"),
+        "Avg. Static Price": t("col_avg_static_price")
+    }
+
+    # Define formatting for the columns
+    style_format = {
+        col_names["Total Consumption"]: "{:,.2f} kWh",
+        col_names["Total Flexible Cost"]: "€{:,.2f}",
+        col_names["Total Static Cost"]: "€{:,.2f}",
+        col_names["Difference (€)"]: "€{:.2f}",
+        col_names["Avg. Flex Price"]: "€{:.4f}",
+        col_names["Avg. Static Price"]: "€{:.4f}"
+    }
+
+    # Select and rename columns
+    df_display = df_summary.rename(columns=col_names)
+    
     if is_granular_data:
-        cols_to_show = ["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]
-        styler = df_summary[cols_to_show].style
-        styler = styler.map(difference_formatter, subset=["Difference (€)"]) #type: ignore
-        styler = styler.format(granular_col_format)
+        cols_to_show = [col_names[c] for c in ["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)", "Avg. Flex Price", "Avg. Static Price"]]
+        styler = df_display[cols_to_show].style
+        styler = styler.map(difference_formatter, subset=[col_names["Difference (€)"]])
     else:
-        cols_to_show = ["Period", "Total Consumption", "Total Static Cost"]
-        styler = df_summary[cols_to_show].style
-        styler = styler.format(regular_col_format)
-        
+        cols_to_show = [col_names[c] for c in ["Period", "Total Consumption", "Total Static Cost", "Avg. Static Price"]]
+        styler = df_display[cols_to_show].style
+
+    styler = styler.format(style_format)
     st.dataframe(styler, hide_index=True, width="stretch")
-    return cols_to_show, granular_col_format, regular_col_format, difference_formatter
+    return cols_to_show, style_format, difference_formatter
 
 def _compute_col_vals(df: pd.DataFrame, is_granular_data: bool, func, func_name: str) -> pd.DataFrame:
     """Computes aggregated column values using the provided function. """
@@ -400,6 +445,11 @@ def _compute_col_vals(df: pd.DataFrame, is_granular_data: bool, func, func_name:
         result["Total Flexible Cost"] = func(df["Total Flexible Cost"])
         result["Total Static Cost"] = func(df["Total Static Cost"])
         result["Difference (€)"] = func(df["Difference (€)"])
+        # For averages, we need to recalculate from totals, not average the averages
+        if func_name == "Average":
+            total_consumption = df["Total Consumption"].sum()
+            result["Avg. Flex Price"] = df["Total Flexible Cost"].sum() / total_consumption if total_consumption > 0 else 0
+            result["Avg. Static Price"] = df["Total Static Cost"].sum() / total_consumption if total_consumption > 0 else 0
     else:
         result["Total Static Cost"] = func(df["Total Static Cost"])
     
@@ -457,24 +507,38 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
     
     # Main DataFrame
     df_summary = compute_cost_comparison_data(df, "Monthly") # Default to monthly for the table
-    cols_to_show, granular_format, regular_format, diff_formatter = _display_summary_table(df_summary, is_granular_data)
+    cols_to_show, style_format, diff_formatter = _display_summary_table(df_summary, is_granular_data)
 
     # Calculate totals
-    df_totals = _compute_col_vals(df_summary, is_granular_data, sum, "Total")
-    df_means = _compute_col_vals(df_summary, is_granular_data, lambda x: x.mean(), "Average")
+    df_totals = _compute_col_vals(df_summary, is_granular_data, sum, t("total_row_label"))
+    df_means = _compute_col_vals(df_summary, is_granular_data, lambda x: x.mean(), t("average_row_label"))
     df_display = pd.concat([df_totals, df_means], ignore_index=True)
 
     # Style and display the totals DataFrame
-    if is_granular_data:
-        totals_styler = df_display[cols_to_show].style
-        totals_styler = totals_styler.map(diff_formatter, subset=["Difference (€)"]) #type: ignore
-        totals_styler = totals_styler.format(granular_format)
-    else:
-        totals_styler = df_display[cols_to_show].style
-        totals_styler = totals_styler.format(regular_format)
-
     st.text(t("total_and_average_values_text"))
+    totals_styler = df_display.rename(columns={col: t(f"col_{col.lower().replace(' (€)', '').replace(' ', '_')}") for col in df_display.columns}).style
+    if is_granular_data:
+        totals_styler = totals_styler.map(diff_formatter, subset=[t("col_difference")])
+    
+    totals_styler = totals_styler.format(style_format)
     st.dataframe(totals_styler.hide(axis="index"), hide_index=True, width="stretch")
+    
+    # --- Yearly Summary ---
+    # Lazily import to avoid circular dependency
+    from methods.analysis import compute_yearly_summary
+
+    df_yearly = compute_yearly_summary(df)
+    if not df_yearly.empty:
+        st.subheader(t("yearly_summary_header"))
+        st.text(t("yearly_summary_text"))
+
+        # Rename 'Year' to 'Period' to match the display function
+        df_yearly = df_yearly.rename(columns={"Year": "Period"})
+        df_yearly["Period"] = df_yearly["Period"].astype(str)
+
+        # Display the yearly table using the same helper
+        _display_summary_table(df_yearly, is_granular_data)
+
 
 # --- Tab: Usage Patterns ---
 
@@ -626,36 +690,6 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         example_day_fig = charts.get_example_day_chart(df_day, intervals)
         st.plotly_chart(example_day_fig, config={"width": "stretch"})
 
-# --- Tab: Yearly Summary ---
-
-def render_yearly_summary_tab(df: pd.DataFrame):
-    """Renders the content for the 'Yearly Summary' tab."""
-    # Lazily import to avoid circular dependency
-    from methods.analysis import compute_yearly_summary
-
-    st.subheader(t("yearly_summary_header"))
-    st.text(t("yearly_summary_text"))
-
-    yearly_agg = compute_yearly_summary(df)
-    if yearly_agg.empty:
-        st.warning(t("no_yearly_summary_data"))
-        return
-    
-    # Rename columns for a more descriptive display in the table
-    display_df = yearly_agg.rename(columns={
-        "Avg. Flex Price": "Avg. Flex Price (€/kWh)",
-        "Avg. Static Price": "Avg. Static Price (€/kWh)"
-    })
-        
-    style_format: dict = {
-        "Total Consumption": "{:,.2f} kWh",
-        "Total Flexible Cost": "€{:,.2f}",
-        "Total Static Cost": "€{:,.2f}",
-        "Avg. Flex Price (€/kWh)": "€{:.4f}",
-        "Avg. Static Price (€/kWh)": "€{:.4f}"
-    }
-    st.dataframe(display_df.style.format(style_format), hide_index=True, width="stretch")
-
 # --- Tab: Download Data ---
 
 @st.cache_data(ttl=3600)
@@ -734,7 +768,5 @@ def render_about_tab():
 @st.cache_data
 def render_footer():
     """Renders the footer with information about the project and further links."""
-    
-    #st.markdown(footer_css, unsafe_allow_html=True)
-    st.markdown("---")
-    st.markdown(f'<div class="footer"><p>{t("footer_text")}</p></div>', unsafe_allow_html=True)
+    st.container(height=200, border=False)
+    st.markdown(f'<div class="footer"><p style="text-align: center;">{t("footer_text")}</p></div>', unsafe_allow_html=True)

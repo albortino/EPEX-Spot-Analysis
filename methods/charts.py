@@ -29,12 +29,12 @@ def get_price_chart(df: pd.DataFrame, static_price: float) -> go.Figure:
     fig.add_trace(go.Scatter( x=df.index, y=df["Spot Price Q3"], mode="lines", line=dict(width=0), fill="tonexty", fillcolor=FLEX_COLOR_SHADE, name="Q1–Q3 Range", showlegend=False))
 
     # Q3 and Q1 Dotted Lines with Mean in between
-    fig.add_trace(go.Scatter(x=df.index, y=df["Spot Price Q3"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR_LIGHT), name="3rd Quartile (Q3)"))
-    fig.add_trace(go.Scatter(x=df.index, y=df["Spot Price Median"], mode="lines", line=dict(color=FLEX_COLOR, width=3), name="Median Price"))
-    fig.add_trace(go.Scatter(x=df.index, y=df["Spot Price Q1"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR_LIGHT), name="1st Quartile (Q1)"))
+    fig.add_trace(go.Scatter(x=df.index, y=df["Spot Price Q3"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR_LIGHT), name=t("spot_price_q3_trace")))
+    fig.add_trace(go.Scatter(x=df.index, y=df["Spot Price Median"], mode="lines", line=dict(color=FLEX_COLOR, width=3), name=t("spot_price_median_trace")))
+    fig.add_trace(go.Scatter(x=df.index, y=df["Spot Price Q1"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR_LIGHT), name=t("spot_price_q1_trace")))
 
     # Static Price
-    fig.add_hline(y=static_price, line=dict(color=STATIC_COLOR, width=2), name="Static Tariff")
+    fig.add_hline(y=static_price, line=dict(color=STATIC_COLOR, width=2), name=t("static_tariff_trace"))
 
     fig.update_layout(xaxis_title=df.index.name, yaxis_title=t("spot_price_kwh_y_axis"), legend_title_text=t("legend_metrics"), hovermode="x unified")
 
@@ -45,7 +45,7 @@ def get_heatmap(df: pd.DataFrame) -> go.Figure:
 
     fig = px.imshow(
         df,
-        labels=dict(x="Hour of Day", y="Month", color="Avg Spot Price (€/kWh)"),
+        labels=dict(x=t("heatmap_x_label"), y=t("heatmap_y_label"), color=t("heatmap_color_label")),
         aspect="auto",
         color_continuous_scale="Viridis"
     )
@@ -72,7 +72,7 @@ def get_consumption_price_heatmap(df: pd.DataFrame) -> go.Figure:
         labels={
             "hour": t("consumption_price_heatmap_hour_label"),
             "price_bin": t("consumption_price_heatmap_price_bin_label"),
-            "color": "Total Consumption (kWh)"
+            "color": t("total_consumption_kwh_label")
         },
         color_continuous_scale="Viridis"
     )
@@ -81,30 +81,18 @@ def get_consumption_price_heatmap(df: pd.DataFrame) -> go.Figure:
     fig.update_yaxes(categoryorder='category ascending', tickformat=".3f")
     return fig
 
-def get_consumption_chart(df: pd.DataFrame, intervals_per_day: int, df_median_spot_price: pd.DataFrame) -> go.Figure:
+def get_consumption_chart(df: pd.DataFrame, intervals_per_day: int, df_median_spot_price: pd.DataFrame) -> go.Figure: # type: ignore
     fig = go.Figure()
     df_plot = df.copy()
     idx = df_plot.index
 
-    # If data is more granular than hourly (e.g., 15-min), scale it to an hourly equivalent for plotting.
-    # This makes the y-axis more intuitive ("per hour").
-    if intervals_per_day > 24:
-        scaling_factor = intervals_per_day / 24
-        for col in df_plot.columns:
-            if "Consumption" in col:
-                df_plot[col] *= scaling_factor
-        intervals_per_day = 24 # Treat as hourly for label generation
-
-    # First trace: Q1 (lower bound of the fill)
-    fig.add_trace(go.Scatter(x=idx, y=df_plot["Consumption Q1"], mode="lines", line=dict(width=0), name="Q1–Q3 Consumption Range", showlegend=False))
-
-    # Second trace: Q3 (upper bound), filled to previous (Q1)
-    fig.add_trace(go.Scatter( x=idx, y=df_plot["Consumption Q3"], mode="lines", line=dict(width=0), fill="tonexty", fillcolor=PERSONAL_DATA_COLOR_SHADE, name="Q1–Q3 Consumption Range", showlegend=False))
-
-    # Add the visible lines on top of the fill area.
-    fig.add_trace(go.Scatter(x=idx, y=df_plot["Consumption Q3"], mode="lines", line=dict(dash="dot", color=PERSONAL_DATA_COLOR_LIGHT), name="3rd Quartile Consumption (Q3)"))
-    fig.add_trace(go.Scatter(x=idx, y=df_plot["Consumption Median"], mode="lines", line=dict(color=PERSONAL_DATA_COLOR, width=3), name="Median Consumption"))
-    fig.add_trace(go.Scatter(x=idx, y=df_plot["Consumption Q1"], mode="lines", line=dict(dash="dot", color=PERSONAL_DATA_COLOR_LIGHT), name="1st Quartile Consumption (Q1)"))
+    # If data was more granular than hourly, it has been resampled to hourly sums before this function.
+    intervals_per_day = 24 # Always treat as hourly for label generation
+    fig.add_trace(go.Scatter(x=idx, y=df_plot["Consumption Q1"], mode="lines", line=dict(width=0), name=t("consumption_q1_q3_range_trace"), showlegend=False))
+    fig.add_trace(go.Scatter(x=idx, y=df_plot["Consumption Q3"], mode="lines", line=dict(width=0), fill="tonexty", fillcolor=PERSONAL_DATA_COLOR_SHADE, name=t("consumption_q1_q3_range_trace"), showlegend=False))
+    fig.add_trace(go.Scatter(x=idx, y=df_plot["Consumption Q3"], mode="lines", line=dict(dash="dot", color=PERSONAL_DATA_COLOR_LIGHT), name=t("consumption_q3_trace")))
+    fig.add_trace(go.Scatter(x=idx, y=df_plot["Consumption Median"], mode="lines", line=dict(color=PERSONAL_DATA_COLOR, width=3), name=t("consumption_median_trace")))
+    fig.add_trace(go.Scatter(x=idx, y=df_plot["Consumption Q1"], mode="lines", line=dict(dash="dot", color=PERSONAL_DATA_COLOR_LIGHT), name=t("consumption_q1_trace")))
 
     # Add Median Spot Price on a secondary y-axis
     fig.add_trace(go.Scatter(
@@ -169,7 +157,7 @@ def get_marimekko_chart(df: pd.DataFrame, border_color: str = "#FFFFFF") -> go.F
         annotations.append(dict(
             x=cumulative_width + width / 2,
             y=price / 2,
-            text=f"{label}<br>{width:.1%}<br>€{price:.3f}/kWh",
+            text=f"{label}\n<br>{width:.1%}<br><b><br></br><span style='font-size:14px'>€{price:.3f}/kWh</span></b>",
             showarrow=False,
             font=dict(color="white", size=11)
         ))
@@ -228,8 +216,8 @@ def get_trend_chart(df_history: pd.DataFrame, df_forecast: pd.DataFrame) -> go.F
         x=df_history["ds"], 
         y=df_history["y"],
         mode="lines",
-        line=dict(width=2, color=FORECAST_ACTUAL_COLOR),
-        name="Daily Consumption (Actual)"
+        line=dict(width=2, color=FORECAST_ACTUAL_COLOR), # type: ignore
+        name=t("daily_consumption_actual_trace")
     ))
 
     # Add the main forecast line
@@ -237,7 +225,7 @@ def get_trend_chart(df_history: pd.DataFrame, df_forecast: pd.DataFrame) -> go.F
         x=df_forecast["ds"],
         y=df_forecast["yhat"],
         mode="lines",
-        name="Forecast",
+        name=t("forecast_trace"),
         line=dict(color=FORECAST_PREDICTED_COLOR, width=3)
     ))
 
@@ -276,19 +264,19 @@ def get_example_day_chart(df_day: pd.DataFrame, intervals_per_day: int) -> go.Fi
     fig.add_trace(go.Bar(
         x=hours,
         y=df_day["Base Load"],
-        name="Base Load",
+        name=t("base_load_trace"),
         marker_color=BASE_COLOR
     ))
     fig.add_trace(go.Bar(
         x=hours,
         y=df_day["Regular Load"],
-        name="Regular Load",
+        name=t("regular_load_trace"),
         marker_color=REGULAR_COLOR
     ))
     fig.add_trace(go.Bar(
         x=hours,
         y=df_day["Peak Load"],
-        name="Peak Load",
+        name=t("peak_load_trace"),
         marker_color=PEAK_COLOR
     ))
 
@@ -308,11 +296,11 @@ def get_avg_price_chart(df_summary: pd.DataFrame, is_granular: bool) -> go.Figur
 
     if is_granular:
         fig.add_trace(go.Scatter(x=df_summary["Period"], y=df_summary["Avg. Flexible Price"],
-                                 mode='lines', name="Avg. Flexible Price",
+                                 mode='lines', name=t("avg_flex_price_trace"),
                                  line=dict(color=FLEX_COLOR)))
 
     fig.add_trace(go.Scatter(x=df_summary["Period"], y=df_summary["Avg Static Price"],
-                             mode='lines', name="Avg Static Price",
+                             mode='lines', name=t("avg_static_price_trace"),
                              line=dict(color=STATIC_COLOR)))
 
     fig.update_layout(
@@ -328,11 +316,11 @@ def get_total_cost_chart(df_summary: pd.DataFrame, is_granular: bool) -> go.Figu
 
     if is_granular:
         fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["Total Flexible Cost"],
-                                 mode='lines', name="Total Flexible Cost",
+                                 mode='lines', name=t("total_flex_cost_trace"),
                                  line=dict(color=FLEX_COLOR)))
 
     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["Total Static Cost"],
-                             mode='lines', name="Total Static Cost",
+                             mode='lines', name=t("total_static_cost_trace"),
                              line=dict(color=STATIC_COLOR)))
 
     fig.update_layout(

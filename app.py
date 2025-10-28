@@ -66,8 +66,7 @@ def main():
         tab_options = [
             "📊 Spot Price Analysis", 
             "💰 Cost Comparison", 
-            "📈 Usage Patterns", 
-            "🗓️ Yearly Summary", 
+            "📈 Usage Patterns",
             "⬇️ Download",
             "❓ FAQ",
             "ℹ️ About"
@@ -75,7 +74,6 @@ def main():
     else: # Basic Mode
         tab_options = [
             "🏠 Dashboard",
-            "🗓️ Yearly Summary", 
             "⬇️ Download",
             "❓ FAQ",
             "ℹ️ About"
@@ -98,9 +96,6 @@ def main():
                 ui_components.render_cost_comparison_tab(df_analysis)
             elif clean_tab_name == "Usage Patterns":
                 ui_components.render_usage_pattern_tab(df_analysis, base_threshold, peak_threshold)
-            elif clean_tab_name == "Yearly Summary":
-                # Use df_analysis which has cost calculations based on user's tariff selection
-                ui_components.render_yearly_summary_tab(df_analysis)
             elif clean_tab_name == "Download":
                 ui_components.render_download_tab(df_analysis_base, start_date, end_date) # Use base analysis data
             elif clean_tab_name == "FAQ":

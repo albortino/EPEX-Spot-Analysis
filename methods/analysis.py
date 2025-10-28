@@ -260,6 +260,12 @@ def compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataFr
     
     df_summary["Difference (€)"] = df_summary["Total Static Cost"] - df_summary["Total Flexible Cost"]
     df_summary["Period"] = df_summary["timestamp"].dt.strftime("%Y-%m-%d" if resolution == "Daily" else "%G-W%V" if resolution == "Weekly" else "%Y-%m")
+
+    # Calculate average prices
+    df_summary["Avg. Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
+    if "Total Flexible Cost" in df_summary.columns:
+        df_summary["Avg. Flex Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
+
     return df_summary
 
 @st.cache_data(ttl=3600)
@@ -301,13 +307,21 @@ def compute_usage_profile_data(df: pd.DataFrame) -> pd.DataFrame:
 def compute_consumption_quartiles(df: pd.DataFrame, intervals_per_day: int) -> pd.DataFrame:
     """Computes and caches the usage data for the selected resolution."""
     logger.log("Computing Consumption Data")
+    df_agg = df.copy()
+
+    # If data is more granular than hourly, resample to hourly sums first.
+    if intervals_per_day > 24:
+        df_agg = df_agg.set_index('timestamp').resample('h').agg({
+            'consumption_kwh': 'sum'
+        }).reset_index()
     
     consumption_agg_dict = { "consumption_kwh": [ ("q1", lambda x: x.quantile(0.25)), ("median", "median"), ("q3", lambda x: x.quantile(0.75)) ] }
     resolution = "Hourly" if intervals_per_day > 1 else "Daily" # Simplified logic
     
-    config = get_aggregation_config(df, resolution)
-    df_consumption_quartiles = df.dropna(subset=["consumption_kwh"]).groupby(config["grouper"]).agg(consumption_agg_dict)
+    config = get_aggregation_config(df_agg, resolution)
+    df_consumption_quartiles = df_agg.dropna(subset=["consumption_kwh"]).groupby(config["grouper"]).agg(consumption_agg_dict)
     df_consumption_quartiles.columns = ["Consumption Q1", "Consumption Median", "Consumption Q3"]
+
     df_consumption_quartiles.index.name = config["name"]        
     df_consumption_quartiles.index = df_consumption_quartiles.index.map(config["x_axis_map"])
     df_consumption_quartiles = df_consumption_quartiles.reindex(config["x_axis_map"].values()).dropna(how="all")
@@ -392,7 +406,9 @@ def compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
     yearly_agg = df.groupby("Year").agg(**summary_agg).reset_index()
     
     if not yearly_agg.empty and yearly_agg["Total Consumption"].sum() > 0:
-        yearly_agg["Avg Static Price"] = yearly_agg["Total Static Cost"] / yearly_agg["Total Consumption"]
+        if is_granular:
+            yearly_agg["Difference (€)"] = yearly_agg["Total Static Cost"] - yearly_agg["Total Flexible Cost"]
+        yearly_agg["Avg. Static Price"] = yearly_agg["Total Static Cost"] / yearly_agg["Total Consumption"]
         if is_granular: yearly_agg["Avg. Flex Price"] = yearly_agg["Total Flexible Cost"] / yearly_agg["Total Consumption"]
 
     return yearly_agg
