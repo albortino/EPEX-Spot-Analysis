@@ -12,6 +12,26 @@ from methods.tariffs import Tariff, TariffManager, TariffType
 from methods.utils import to_excel, get_intervals_per_day, get_aggregation_config, calculate_granular_data, get_min_max_date
 import methods.charts as charts
 from methods.logger import logger
+from methods.validation import DataQuality
+
+
+def render_data_quality(quality: DataQuality, coverage: float | None = None) -> None:
+    """Show the evidence behind a result before presenting a tariff recommendation."""
+    label = "Data quality" if st.session_state.get("lang", "de") == "en" else "Datenqualität"
+    with st.expander(label, expanded=not quality.usable):
+        st.caption(quality.message)
+        cols = st.columns(4)
+        cols[0].metric("Rows", f"{quality.rows:,}")
+        cols[1].metric("Resolution", f"{quality.resolution_minutes or '–'} min")
+        cols[2].metric("Duplicates", quality.duplicates)
+        cols[3].metric("Gaps", quality.gaps)
+        if coverage is not None:
+            st.metric("Spot-price coverage", f"{coverage:.0%}")
+
+
+def render_energy_cost_notice() -> None:
+    """Keep the billing boundary visible beside every public result."""
+    st.info("Estimated energy cost only. Grid fees, taxes, subsidies, and unsupported tariff charges are excluded.")
 
 # --- Introduction ---
 def render_intro():
@@ -154,20 +174,12 @@ def _render_tariff_selection_widgets(_tariff_manager: TariffManager, expanded: b
 
     return final_tariffs["flex"], final_tariffs["static"]
 
-def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, str, date, date, str, float]:
+def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, date, date, str, float]:
     """Renders all sidebar inputs and returns the configuration values."""
     logger.log("Rendering Sidebar")
     with st.sidebar:
         st.header(t("configuration"))
 
-        # Mode Selection
-        is_expert_mode = st.toggle(
-            "Expert Mode",
-            value=False,
-            help="Enable for in-depth analysis and more configuration options."
-        )
-        mode = "Expert" if is_expert_mode else "Basic"
-        
         # 1. Country Selection for EPEX
         country_select = {"Austria": "at", "Germany": "de"}
         
@@ -215,7 +227,7 @@ def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, str, date, date, str, 
             st.markdown(t("simulate_shifting_markdown"), help=t("simulate_shifting_help"))
             shift_percentage = st.slider(t("shift_peak_load_slider"), min_value=0, max_value=100, value=0, step=5)
 
-        return mode, awattar_country, start_date, end_date, selected_quarter, shift_percentage
+        return awattar_country, start_date, end_date, selected_quarter, shift_percentage
 
 def render_tariff_selection_header(df: pd.DataFrame, tariff_manager: TariffManager, country: str, key_prefix: str = "") -> tuple[Tariff, Tariff]:
     """Renders the main tariff selection UI on the main page."""
@@ -241,6 +253,8 @@ def render_tariff_selection_header(df: pd.DataFrame, tariff_manager: TariffManag
                 with col2:
                     static_info = t("cheapest_static_tariff_info", tariff_name=final_static_tariff.name) if final_static_tariff else t("no_predefined_static_tariffs")
                     st.info(static_info)
+
+                st.caption("Catalog prices are energy-only estimates. Verify tariff conditions and the source before switching.")
                 
                 return final_flex_tariff, final_static_tariff
             else:
@@ -329,11 +343,8 @@ def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     st.plotly_chart(heatmap_fig, config={"width": "stretch"}, key="price_heatmap_chart")
 
 def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_threshold: float, peak_threshold: float):
-    """Renders the content for the 'Basic Dashboard' tab."""
+    """Render the decision summary without duplicating exploration charts."""
     logger.log("Rendering Basic Dashboard Tab")
-    # Lazily import to avoid circular dependency
-    from methods.analysis import compute_price_distribution_data, compute_cost_comparison_data, compute_consumption_quartiles, compute_usage_profile_data
-
     # Consumption Summary Metrics
     total_kwh = df["consumption_kwh"].sum()
     days_count = max((df["timestamp"].max() - df["timestamp"].min()).total_seconds() / 86400, 1)
@@ -350,58 +361,6 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
         score = compute_peak_timing_score(df)
         col4.metric(t("peak_timing_score_metric"), f"{score:.0%}", help=t("peak_timing_score_help"))
 
-    # 1. Price Chart (Monthly)
-    st.subheader(t("price_over_time_header"))
-    st.markdown(t("price_over_time_markdown"))
-    
-    resolution = st.radio(t("price_analysis_resolution_label"), ("Monthly", "Weekly", "Hourly"), horizontal=True, key="basic_res")
-
-    df_price = compute_price_distribution_data(df, resolution)
-    price_fig = charts.get_price_chart(df_price, static_tariff.price_kwh)
-    st.plotly_chart(price_fig, config={"width": "stretch"}, key="basic_price_chart")
-
-    # 2. Average Price per kWh
-    st.subheader(t("avg_price_per_kwh_header"))
-    st.markdown(t("avg_price_per_kwh_markdown"))
-    df_summary = compute_cost_comparison_data(df, "Monthly") # Always use monthly for this overview chart
-    is_granular_data = calculate_granular_data(df)
-    if not df_summary.empty:
-        df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
-        if is_granular_data:
-            df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
-        
-        avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular_data)
-        st.plotly_chart(avg_price_fig, config={"width": "stretch"}, key="basic_avg_price_chart")
-
-    # 3. Daily Usage
-    st.subheader(t("daily_consumption_header"))
-    st.markdown(t("daily_consumption_markdown"))
-    intervals = get_intervals_per_day(df)
-    df_median_spot = compute_price_distribution_data(df, "Hourly")
-    df_consumption_day = compute_consumption_quartiles(df, intervals)
-    if not df_consumption_day.empty:
-        consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals, df_median_spot)
-        st.plotly_chart(consumption_fig, config={"width": "stretch"}, key="basic_consumption_chart")
-
-    # 4. Usage Profile
-    if intervals > 24: # Only for granular data
-        st.subheader(t("usage_profile_header"))
-        st.markdown(t("usage_profile_markdown"))
-        
-        # Display Thresholds
-        col1, col2, _, _ = st.columns(4)
-        col1.metric(t("base_load_threshold_metric"), f"{base_threshold:.3f} kWh", help=t("base_load_threshold_help"))
-        # The peak_threshold passed is the influenceable part. Add base for the absolute value.
-        absolute_peak_threshold = base_threshold + peak_threshold
-        col2.metric(t("peak_sustain_threshold_metric"), f"{absolute_peak_threshold:.3f} kWh", help=t("peak_sustain_threshold_help"))
-
-        profile_data = compute_usage_profile_data(df)
-        if not profile_data.empty:
-            marimekko_fig = charts.get_marimekko_chart(profile_data)      
-            st.plotly_chart(marimekko_fig, config={"width": "stretch"}, key="basic_marimekko_chart")
-
-    # 5. Comparison Table
-    render_cost_comparison_tab(df, mode="basic")
     
 # --- Tab: Cost Comparison ---
 def _display_summary_table(df_summary: pd.DataFrame, is_granular_data: bool):

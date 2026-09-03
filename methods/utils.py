@@ -23,10 +23,10 @@ def get_min_max_date(df: pd.DataFrame, today_as_max: bool = TODAY_IS_MAX_DATE) -
     if min_val_date < MIN_DATE:
         min_val_date = MIN_DATE
         
-    if today_as_max:
-        max_val_date = pd.Timestamp.today().date() + pd.Timedelta(days=1)
-    else:
-        max_val_date = df["timestamp"].max().date()
+    data_max = df["timestamp"].max().date()
+    # Never expand an historic upload to today; that creates needless API calls
+    # and makes the default period look as though it contains missing data.
+    max_val_date = min(data_max, pd.Timestamp.today().date()) if today_as_max else data_max
     return min_val_date, max_val_date
 
 def get_intervals_per_day(df: pd.DataFrame) -> int:

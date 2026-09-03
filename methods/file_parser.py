@@ -256,9 +256,9 @@ class ConsumptionDataParser:
                 main_formats = self._load_from_js_content(js_content)
             except ValueError as e:
                 logger.log(f"Failed to parse provider config from direct content: {e}", severity=1)
-        elif js_url:
+        elif js_url and not (main_formats := self._load_from_cache()):
             try:
-                response = requests.get(js_url)
+                response = requests.get(js_url, timeout=10)
                 response.raise_for_status()
                 main_formats = self._load_from_js_content(response.text)
                 self._save_to_cache(main_formats)
@@ -345,11 +345,16 @@ class ConsumptionDataParser:
 
         try:
             if hasattr(uploaded_file, "getvalue"):
-                file_content = uploaded_file.getvalue().decode("utf-8-sig")
+                raw_content = uploaded_file.getvalue()
             else:
-                file_content = uploaded_file.read()
-                if isinstance(file_content, bytes):
-                    file_content = file_content.decode("utf-8-sig")
+                raw_content = uploaded_file.read()
+            if isinstance(raw_content, bytes):
+                try:
+                    file_content = raw_content.decode("utf-8-sig")
+                except UnicodeDecodeError:
+                    file_content = raw_content.decode("latin-1")
+            else:
+                file_content = raw_content
         except Exception as e:
             logger.log(f"Error reading uploaded file: {e}", severity=1)
             return pd.DataFrame()

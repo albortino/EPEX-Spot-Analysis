@@ -162,10 +162,11 @@ def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame,
 
 # --- Peak Shifting Simulation ---
 @st.cache_data(ttl=60*10)
-def simulate_peak_shifting(df: pd.DataFrame, shift_percentage: float) -> pd.DataFrame:
+def simulate_peak_shifting(df: pd.DataFrame, shift_percentage: float, window_hours: int = 2) -> pd.DataFrame:
     """
     Simulates shifting a percentage of peak load from the most expensive times
-    to the cheapest hour within a +/- 2-hour window.
+    to a cheaper available interval within a symmetric time window. The receiving
+    interval is capped at the source peak energy, preventing implausible spikes.
     """
     if shift_percentage == 0:
         return df
@@ -188,16 +189,18 @@ def simulate_peak_shifting(df: pd.DataFrame, shift_percentage: float) -> pd.Data
         
         current_timestamp = peak_row["timestamp"]
         window_df = df_sim[
-            (df_sim["timestamp"] >= current_timestamp - pd.Timedelta(hours=2)) & 
-            (df_sim["timestamp"] <= current_timestamp + pd.Timedelta(hours=2))
-        ]
+            (df_sim["timestamp"] >= current_timestamp - pd.Timedelta(hours=window_hours)) &
+            (df_sim["timestamp"] <= current_timestamp + pd.Timedelta(hours=window_hours))
+        ].copy()
+        window_df = window_df[window_df.index != peak_idx]
         if window_df.empty: continue
         
         cheapest_hour_in_window = window_df.loc[window_df["spot_price_eur_kwh"].idxmin()]
         
         if cheapest_hour_in_window["spot_price_eur_kwh"] < peak_row["spot_price_eur_kwh"]:
             kwh_in_this_peak = df_sim.at[peak_idx, "peak_load_kwh"]
-            kwh_to_shift_now = min(kwh_in_this_peak, kwh_to_shift_total)
+            receiving_capacity = peak_row["peak_load_kwh"]
+            kwh_to_shift_now = min(kwh_in_this_peak, kwh_to_shift_total, receiving_capacity)
             
             df_sim.at[peak_idx, "peak_load_kwh"] -= kwh_to_shift_now
             shifted_load_additions.loc[cheapest_hour_in_window.name] += kwh_to_shift_now

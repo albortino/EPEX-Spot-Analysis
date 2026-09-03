@@ -92,6 +92,12 @@ Navigate through the different tabs ("Spot Price Analysis", "Cost Comparison", "
 * **Consumption Data:** A CSV file containing your electricity consumption. Key columns expected are a timestamp and a consumption value (e.g., `consumption_kwh`). The application is designed to be flexible with data granularity, but 15-minute intervals provide richer insights for usage pattern analysis. In case of any uncertainties please refer to the documentation in [awattar backtesting](https://awattar-backtesting.github.io/).
 * **Spot Prices:** The application automatically fetches hourly EPEX spot prices from the aWATTar API for the selected country and date range. These prices are cached locally to optimize performance.
 
+## Public deployment and calculation boundary
+
+Uploads are processed only for the active Streamlit session; the application does not create accounts or retain household consumption histories. Results are **energy-cost estimates**: they include the selected supplier's modeled energy price and monthly supplier fee, but exclude grid fees, taxes, subsidies, and tariff components not represented in the selected tariff record. The app blocks comparison when spot-price coverage is incomplete and shows data-quality diagnostics before presenting results.
+
+The built-in tariff list is a convenience catalog, not a switching offer. Verify each provider's current conditions and source page before making a contract decision.
+
 ## File Structure Overview
 
 * `app.py`: The main script orchestrating the Streamlit application flow, loading modules, and rendering the UI.
