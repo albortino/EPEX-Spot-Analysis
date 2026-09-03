@@ -276,6 +276,7 @@ def render_absence_days(df: pd.DataFrame, base_threshold: float, absence_thresho
 def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: Tariff):
     """Displays the final tariff recommendation based on calculated savings."""
     logger.log("Rendering Recommendation")
+    from methods.analysis import compute_peak_timing_score
 
     is_granular_data = calculate_granular_data(df)
     if not is_granular_data:
@@ -283,13 +284,7 @@ def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: 
         return
 
     savings = df["total_cost_static"].sum() - df["total_cost_flexible"].sum()
-
-    # Calculate the proportion of peak consumption that occurs during the cheapest 25% of hours
-    df["price_quantile"] = df.groupby(pd.Grouper(key="timestamp", freq="MS"))["spot_price_eur_kwh"].transform(
-        lambda x: pd.qcut(x, 4, labels=False, duplicates="drop"))
-    peak_total_kwh = df["peak_load_kwh"].sum()
-    peak_cheap_kwh = df[df["price_quantile"] == 0]["peak_load_kwh"].sum()
-    peak_ratio = peak_cheap_kwh / peak_total_kwh if peak_total_kwh > 0 else 0
+    peak_ratio = compute_peak_timing_score(df)
     
 
     # Display the appropriate recommendation message
@@ -345,10 +340,15 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     avg_month_kwh = total_kwh / (days_count / 30.4375)
     est_year_kwh = total_kwh / (days_count / 365.25)
 
-    col1, col2, col3 = st.columns(3)
+    from methods.analysis import compute_peak_timing_score
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric(t("total_consumption_metric"), f"{total_kwh:,.2f} kWh")
     col2.metric(t("avg_consumption_per_month_metric"), f"{avg_month_kwh:,.2f} kWh")
     col3.metric(t("estimated_consumption_per_year_metric"), f"{est_year_kwh:,.2f} kWh")
+
+    if calculate_granular_data(df):
+        score = compute_peak_timing_score(df)
+        col4.metric(t("peak_timing_score_metric"), f"{score:.0%}", help=t("peak_timing_score_help"))
 
     # 1. Price Chart (Monthly)
     st.subheader(t("price_over_time_header"))

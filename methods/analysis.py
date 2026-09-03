@@ -4,7 +4,7 @@ import numpy as np
 from prophet import Prophet
 
 from methods.utils import get_intervals_per_day, get_min_max_date, get_aggregation_config
-from methods.config import NEGLIGABLE_KWH, BASE_QUANTILE_THRESHOLD, PEAK_QUANTILE_THRESHOLD, STD_MULTIPLE, THRESHOLD_STABLE_TREND, TODAY_IS_MAX_DATE, LOCAL_TIMEZONE
+from methods.config import NEGLIGABLE_KWH, BASE_QUANTILE_THRESHOLD, PEAK_QUANTILE_THRESHOLD, STD_MULTIPLE, THRESHOLD_STABLE_TREND, TODAY_IS_MAX_DATE, LOCAL_TIMEZONE, FFT_BASE_HARMONICS, OVERNIGHT_HOURS, PEAK_SUSTAIN_INTERVALS
 from methods.tariffs import Tariff, TariffManager
 import methods.data_loader as data_loader
 from methods.logger import logger
@@ -14,103 +14,151 @@ from methods.logger import logger
 
 def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame, float, float]:
     """
-    Classifies hourly consumption into Base, Peak, and Regular load using a stateful approach.
-    A peak event starts with a sharp increase in consumption (trigger) and continues
-    as long as consumption remains above a high-usage sustain threshold.
-    Base Usage is always classified. However, in every time resolution, only either peak or regular usage
-    can appear. This is intentionally done instead of taking the mean regular usage before and after a peak
-    as this would further bias the analysis.
+    Classifies consumption into Base, Regular, and Peak load using signal decomposition.
+
+    Base Load is extracted per day via FFT: the DC component plus a small number of
+    low-frequency harmonics represent the slow, always-on background draw (fridge,
+    modem, standby). The per-day signals are then anchored to a global overnight
+    baseline so the base is comparable across days.
+
+    After subtracting base, the residual (influenceable load) is split into Regular
+    and Peak using two complementary conditions OR'd together:
+      A) Rapid-onset trigger: sharp derivative spike that pushes the residual above
+         the high-usage sustain threshold (catches kettles, ovens switching on).
+      B) Sustained amplitude: residual stays above the sustain threshold for at least
+         PEAK_SUSTAIN_INTERVALS consecutive intervals without a trigger (catches EV
+         chargers, oven bake sessions with gradual onset).
+
+    During peak intervals the existing re-attribution step carves back an estimate of
+    the underlying regular load so all three buckets are always consistent.
     """
 
     if df.empty:
         return df, 0.0, 0.0
 
     df_c = df.copy()
-
-    # --- Base Load Calculation ---
-    # Find the most stable, lowest consumption period for each day to define the base load.
-    # This is more robust than assuming base load occurs at fixed night hours.
-    df_local = df.copy()
+    df_local = df_c.copy()
     df_local["timestamp_local"] = df_local["timestamp"].dt.tz_convert(local_timezone)
-    indexed_consumption = df_local.set_index("timestamp_local")["consumption_kwh"]
-    
-    # Calculate rolling metrics over a 4-hour window to find stable periods.
-    # Define rolling window as 4h. In case data logs every 15 minutes multiply it with a factor.
     intervals_per_day = get_intervals_per_day(df_local)
-    rolling_window = 4 * intervals_per_day // 24
-     
-    df_local["rolling_std"] = indexed_consumption.rolling(window=rolling_window, center=True).std().values
-    df_local["rolling_mean"] = indexed_consumption.rolling(window=rolling_window, center=True).quantile(BASE_QUANTILE_THRESHOLD).values
-    
-    # For each day, find the point with the minimum rolling std dev (stability).
-    # In case of a tie, choose the one with the lower rolling mean (consumption).
-    stable_periods = df_local.dropna(subset=["rolling_std", "rolling_mean"]).sort_values(by=["rolling_std", "rolling_mean"])
-    daily_base_load_points = stable_periods.groupby(df_local['timestamp_local'].dt.date).first()
-    base_load_threshold = daily_base_load_points["rolling_mean"].mean() if not daily_base_load_points.empty else 0.0
 
-    # --- Peak Load Calculation ---
-    # Influencable load is everything above the base load.
-    influenceable_load = (df_c["consumption_kwh"] - base_load_threshold).clip(lower=0)
-    consumption_diff = df_c["consumption_kwh"].diff().fillna(0).astype(float)
-    
-    # Sustain Threshold: A high level of consumption. We use a quantile on the *influenceable* load.
-    # This represents consumption significantly above the base.
-    peak_sustain_threshold_influenceable = influenceable_load[influenceable_load > NEGLIGABLE_KWH].quantile(PEAK_QUANTILE_THRESHOLD)
-    peak_sustain_threshold_influenceable = 0.0 if pd.isna(peak_sustain_threshold_influenceable) else peak_sustain_threshold_influenceable
-    peak_sustain_threshold_absolute = base_load_threshold + peak_sustain_threshold_influenceable
+    # --- Step 1: Per-day FFT base signal extraction ---
+    # For each calendar day, keep only the DC component + FFT_BASE_HARMONICS low
+    # harmonics. This reconstructs the slow always-on floor for that day.
+    df_local["date"] = df_local["timestamp_local"].dt.date
+    base_signal_parts = []
 
-    # Trigger Threshold: A sharp increase from the previous hour (based on std dev of positive changes).
-    positive_diffs = consumption_diff[consumption_diff > NEGLIGABLE_KWH]
-    peak_trigger_threshold = positive_diffs.std() * STD_MULTIPLE if not positive_diffs.empty else 0.0
-    peak_trigger_threshold = 0.0 if pd.isna(peak_trigger_threshold) else peak_trigger_threshold
+    for day, group in df_local.groupby("date", sort=True):
+        y = group["consumption_kwh"].values.astype(float)
+        n = len(y)
+        if n < 2:
+            base_signal_parts.append(pd.Series(y, index=group.index))
+            continue
 
-    # If sustain threshold is negligible, classify all influenceable load as "regular".
-    if peak_sustain_threshold_influenceable < NEGLIGABLE_KWH:
-        df_c["base_load_kwh"] = df_c["consumption_kwh"].clip(upper=base_load_threshold)
+        coeffs = np.fft.rfft(y)
+        # Zero out every component above DC + FFT_BASE_HARMONICS
+        cutoff = 1 + FFT_BASE_HARMONICS
+        coeffs[cutoff:] = 0.0
+        base_day = np.fft.irfft(coeffs, n=n)
+        # Clip negatives and values above the actual consumption
+        base_day = np.clip(base_day, 0, y.max() if y.max() > 0 else 0)
+        base_signal_parts.append(pd.Series(base_day, index=group.index))
+
+    base_signal = pd.concat(base_signal_parts).reindex(df_c.index)
+
+    # --- Step 2: Global overnight anchor ---
+    # Scale the per-day base signals so the base level is globally stable and
+    # comparable across days. Anchor = 0.95 quantile of raw overnight consumption.
+    oh_start, oh_end = OVERNIGHT_HOURS
+    overnight_mask = (
+        df_local["timestamp_local"].dt.hour >= oh_start
+    ) & (
+        df_local["timestamp_local"].dt.hour < oh_end
+    )
+    overnight_vals = df_c.loc[overnight_mask, "consumption_kwh"]
+    overnight_anchor = overnight_vals.quantile(0.95) if not overnight_vals.empty else base_signal.mean()
+    overnight_anchor = float(overnight_anchor) if not pd.isna(overnight_anchor) else 0.0
+
+    # Rescale each day's FFT base so its mean equals overnight_anchor.
+    # Days with a near-zero reconstructed base get overnight_anchor directly.
+    rescaled_parts = []
+    for day, group in df_local.groupby("date", sort=True):
+        seg = base_signal.loc[group.index]
+        seg_mean = seg.mean()
+        if seg_mean > NEGLIGABLE_KWH:
+            seg = seg * (overnight_anchor / seg_mean)
+        else:
+            seg = pd.Series(overnight_anchor, index=group.index)
+        # Never let base exceed actual consumption
+        seg = seg.clip(upper=df_c.loc[group.index, "consumption_kwh"])
+        rescaled_parts.append(seg)
+
+    base_signal = pd.concat(rescaled_parts).reindex(df_c.index)
+
+    # --- Step 3: Residual (influenceable load) ---
+    residual = (df_c["consumption_kwh"] - base_signal).clip(lower=0)
+
+    # --- Step 4: Peak detection on the residual ---
+    # Global sustain threshold: high-usage quantile of the non-negligible residual.
+    significant_residual = residual[residual > NEGLIGABLE_KWH]
+    peak_sustain_threshold = significant_residual.quantile(PEAK_QUANTILE_THRESHOLD) if not significant_residual.empty else 0.0
+    peak_sustain_threshold = 0.0 if pd.isna(peak_sustain_threshold) else float(peak_sustain_threshold)
+
+    # If the residual spread is negligible, nothing is peak — all is regular.
+    if peak_sustain_threshold < NEGLIGABLE_KWH:
+        df_c["base_load_kwh"] = base_signal
+        df_c["regular_load_kwh"] = residual
         df_c["peak_load_kwh"] = 0.0
-        df_c["regular_load_kwh"] = influenceable_load
-        return df_c, base_load_threshold, peak_sustain_threshold_influenceable
+        return df_c, overnight_anchor, peak_sustain_threshold
 
-    # --- Classification Loop ---
-    is_peak_list = []
+    residual_diff = residual.diff().fillna(0).astype(float)
+    positive_diffs = residual_diff[residual_diff > NEGLIGABLE_KWH]
+    trigger_threshold = positive_diffs.std() * STD_MULTIPLE if not positive_diffs.empty else 0.0
+    trigger_threshold = 0.0 if pd.isna(trigger_threshold) else float(trigger_threshold)
+
+    # Condition A — rapid-onset trigger + sustain (stateful)
+    is_peak_trigger = []
     in_peak_state = False
     for i in range(len(df_c)):
-        is_trigger = consumption_diff.iloc[i] > peak_trigger_threshold
-        is_sustained = df_c["consumption_kwh"].iloc[i] > peak_sustain_threshold_absolute
-        
-        # Start a new peak if a sharp increase pushes consumption above the sustain level
+        is_trigger = residual_diff.iloc[i] > trigger_threshold
+        is_sustained = residual.iloc[i] > peak_sustain_threshold
         if not in_peak_state and is_trigger and is_sustained:
             in_peak_state = True
-        # Already in a peak. End the peak if consumption falls below the sustain level
         elif in_peak_state and not is_sustained:
             in_peak_state = False
-        is_peak_list.append(in_peak_state)
-    
-    is_peak = pd.Series(is_peak_list, index=df_c.index)
+        is_peak_trigger.append(in_peak_state)
+    is_peak_trigger = pd.Series(is_peak_trigger, index=df_c.index)
 
-    #  Assign load types based on classification
-    df_c["base_load_kwh"] = df_c["consumption_kwh"].clip(upper=base_load_threshold)
-    df_c["regular_load_kwh"] = influenceable_load.where(~is_peak, 0)
-    df_c["peak_load_kwh"] = influenceable_load.where(is_peak, 0)
+    # Condition B — sustained amplitude: residual above threshold for >= PEAK_SUSTAIN_INTERVALS
+    # consecutive intervals (no trigger required). Captures gradual-onset high draws.
+    above_threshold = residual > peak_sustain_threshold
+    is_peak_sustained = pd.Series(False, index=df_c.index)
+    if PEAK_SUSTAIN_INTERVALS <= 1:
+        # Every interval above threshold qualifies immediately
+        is_peak_sustained = above_threshold
+    else:
+        # Run-length: mark a run as peak only once it has lasted long enough
+        run_len = above_threshold.groupby((above_threshold != above_threshold.shift()).cumsum()).transform("sum")
+        is_peak_sustained = above_threshold & (run_len >= PEAK_SUSTAIN_INTERVALS)
 
-    # --- Refinement Step ---
-    # Re-assign a portion of the peak load back to regular load.
-    # This reflects that even during a peak, there's underlying regular consumption.
-    # The amount re-assigned is the average regular load from non-peak intervals of that day.
+    is_peak = is_peak_trigger | is_peak_sustained
+
+    # --- Step 5: Assign load columns ---
+    df_c["base_load_kwh"] = base_signal
+    df_c["regular_load_kwh"] = residual.where(~is_peak, 0)
+    df_c["peak_load_kwh"] = residual.where(is_peak, 0)
+
+    # --- Step 6: Refinement — re-attribute base + regular from within peak intervals ---
+    # During a peak event the underlying regular load is still running. Estimate it
+    # from surrounding non-peak intervals and shift that portion out of peak_load_kwh.
     if is_peak.any():
-        df_c['date'] = df_c['timestamp'].dt.date
-        # Calculate the average regular load for non-peak intervals on each day.
-        daily_avg_regular_load = df_c[~is_peak & (df_c['regular_load_kwh'] > 0)].groupby('date')['regular_load_kwh'].mean()
+        df_c["_date"] = df_c["timestamp"].dt.date
+        daily_avg_regular = df_c[~is_peak & (df_c["regular_load_kwh"] > 0)].groupby("_date")["regular_load_kwh"].mean()
+        df_c["_avg_regular"] = df_c["_date"].map(daily_avg_regular).fillna(0)
+        df_c.loc[is_peak, "regular_load_kwh"] = df_c["_avg_regular"]
+        df_c.loc[is_peak, "peak_load_kwh"] = (df_c["peak_load_kwh"] - df_c["_avg_regular"]).clip(lower=0)
+        df_c = df_c.drop(columns=["_date", "_avg_regular"])
 
-        # Map the daily average back to each row and fill days with no regular load with 0.
-        df_c['avg_regular_for_day'] = df_c['date'].map(daily_avg_regular_load).fillna(0)
-
-        # Shift the calculated average amount from peak to regular load for peak intervals.
-        df_c.loc[is_peak, 'regular_load_kwh'] = df_c['avg_regular_for_day']
-        df_c.loc[is_peak, 'peak_load_kwh'] = (df_c['peak_load_kwh'] - df_c['avg_regular_for_day']).clip(lower=0)
-        df_c = df_c.drop(columns=['date', 'avg_regular_for_day'])
-
-    return df_c, base_load_threshold, peak_sustain_threshold_influenceable
+    return df_c, overnight_anchor, peak_sustain_threshold
 
 # --- Peak Shifting Simulation ---
 @st.cache_data(ttl=60*10)
@@ -439,3 +487,25 @@ def compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
         if is_granular: yearly_agg["Avg. Flex Price"] = yearly_agg["Total Flexible Cost"] / yearly_agg["Total Consumption"]
 
     return yearly_agg
+
+
+@st.cache_data(ttl=3600)
+def compute_peak_timing_score(df: pd.DataFrame) -> float:
+    """
+    Fraction of peak load that falls in the cheapest 25% of spot-price hours
+    (bottom Q1 quantile, computed per calendar month).
+
+    Returns a value in [0.0, 1.0]. Returns 0.0 when there is no peak load or
+    no spot-price data — e.g. for coarse daily data without load classification.
+    """
+    if "peak_load_kwh" not in df.columns or "spot_price_eur_kwh" not in df.columns:
+        return 0.0
+    df = df.copy()
+    df["_price_q"] = df.groupby(pd.Grouper(key="timestamp", freq="MS"))["spot_price_eur_kwh"].transform(
+        lambda x: pd.qcut(x, 4, labels=False, duplicates="drop")
+    )
+    peak_total = df["peak_load_kwh"].sum()
+    if peak_total <= 0:
+        return 0.0
+    peak_cheap = df[df["_price_q"] == 0]["peak_load_kwh"].sum()
+    return float(np.clip(peak_cheap / peak_total, 0.0, 1.0))

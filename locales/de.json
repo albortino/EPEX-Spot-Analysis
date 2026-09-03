@@ -163,12 +163,14 @@
     "col_total_consumption": "Gesamtverbrauch",
     "col_total_flex_cost": "Gesamtkosten Flexibel",
     "col_total_static_cost": "Gesamtkosten Statisch",
-    "col_difference": "Differenz (€)",
+    "col_difference": "Ersparnis (€)",
     "col_avg_flex_price": "Durchschn. Flex Preis (€/kWh)",
     "col_avg_static_price": "Durchschn. Statischer Preis (€/kWh)",
     "total_row_label": "Gesamt",
     "average_row_label": "Durchschnitt",
     "total_consumption_metric": "Gesamtverbrauch",
     "avg_consumption_per_month_metric": "Durchschnitt / Monat",
-    "estimated_consumption_per_year_metric": "Hochrechnung / Jahr"
+    "estimated_consumption_per_year_metric": "Hochrechnung / Jahr",
+    "peak_timing_score_metric": "Peak-Timing-Score",
+    "peak_timing_score_help": "Anteil deiner Spitzenlast (z.B. E-Auto-Laden, Wärmepumpe), der auf die günstigsten 25 % der Marktstunden pro Monat entfiel. 100 % bedeutet, alle Spitzen lagen perfekt in günstigen Stunden."
 }
