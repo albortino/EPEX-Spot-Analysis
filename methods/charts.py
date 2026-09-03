@@ -49,15 +49,6 @@ def get_heatmap(df: pd.DataFrame) -> go.Figure:
         aspect="auto",
         color_continuous_scale="Viridis"
     )
-    
-    # Assume df.index contains month numbers in appearance order
-    month_numbers = df.index.tolist()
-    month_names = [calendar.month_name[m] for m in month_numbers]
-
-    fig.update_yaxes(
-        tickvals=month_numbers,
-        ticktext=month_names
-    )
 
     return fig
 

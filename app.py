@@ -97,7 +97,7 @@ def main():
             elif clean_tab_name == "Usage Patterns":
                 ui_components.render_usage_pattern_tab(df_analysis, base_threshold, peak_threshold)
             elif clean_tab_name == "Download":
-                ui_components.render_download_tab(df_analysis_base, start_date, end_date) # Use base analysis data
+                ui_components.render_download_tab(df_analysis_base, flex_tariff, start_date, end_date) # Use base analysis data
             elif clean_tab_name == "FAQ":
                 ui_components.render_faq_tab()
             elif clean_tab_name == "About":

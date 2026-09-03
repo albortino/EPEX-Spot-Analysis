@@ -97,7 +97,7 @@
     "no_yearly_summary_data": "Keine Daten zur Erstellung einer Jahresübersicht verfügbar.",
     "download_header": "Download der verwendeten Daten",
     "download_full_analysis_label": "Vollständige Analyse herunterladen (XLSX)",
-    "download_full_analysis_markdown": "Lade die vollständige, detaillierte Analyse herunter, einschließlich Verbrauchsklassifizierung und Kostenberechnungen für beide Tariftypen.",
+    "download_full_analysis_markdown": "Lade die vollständige, detaillierte Analyse herunter, einschließlich Verbrauchsklassifizierung und Kostenberechnungen.",
     "download_spot_prices_label": "Spotpreise herunterladen (XLSX)",
     "download_spot_prices_markdown": "Lade nur die stündlichen EPEX-Spotpreise für den ausgewählten Zeitraum herunter.",
     "faq_header": "Häufig gestellte Fragen & Hilfe",
@@ -167,5 +167,8 @@
     "col_avg_flex_price": "Durchschn. Flex Preis (€/kWh)",
     "col_avg_static_price": "Durchschn. Statischer Preis (€/kWh)",
     "total_row_label": "Gesamt",
-    "average_row_label": "Durchschnitt"
+    "average_row_label": "Durchschnitt",
+    "total_consumption_metric": "Gesamtverbrauch",
+    "avg_consumption_per_month_metric": "Durchschnitt / Monat",
+    "estimated_consumption_per_year_metric": "Hochrechnung / Jahr"
 }

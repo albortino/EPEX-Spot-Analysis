@@ -339,6 +339,17 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     # Lazily import to avoid circular dependency
     from methods.analysis import compute_price_distribution_data, compute_cost_comparison_data, compute_consumption_quartiles, compute_usage_profile_data
 
+    # Consumption Summary Metrics
+    total_kwh = df["consumption_kwh"].sum()
+    days_count = max((df["timestamp"].max() - df["timestamp"].min()).total_seconds() / 86400, 1)
+    avg_month_kwh = total_kwh / (days_count / 30.4375)
+    est_year_kwh = total_kwh / (days_count / 365.25)
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric(t("total_consumption_metric"), f"{total_kwh:,.2f} kWh")
+    col2.metric(t("avg_consumption_per_month_metric"), f"{avg_month_kwh:,.2f} kWh")
+    col3.metric(t("estimated_consumption_per_year_metric"), f"{est_year_kwh:,.2f} kWh")
+
     # 1. Price Chart (Monthly)
     st.subheader(t("price_over_time_header"))
     st.markdown(t("price_over_time_markdown"))
@@ -693,22 +704,35 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
 # --- Tab: Download Data ---
 
 @st.cache_data(ttl=3600)
-def _compute_download_data(df: pd.DataFrame) -> tuple[bytes, bytes]:
+def _compute_download_data(df: pd.DataFrame, flex_tariff: Tariff) -> tuple[bytes, bytes]:
     """Prepares and caches the Excel file bytes for download."""
     logger.log("Computing Download Data")
     
+    df_download = df.copy()
+
+    # Calculate the flexible price per kWh based on the selected tariff
+    if "spot_price_eur_kwh" in df_download.columns and flex_tariff:
+        flex_price = df_download["spot_price_eur_kwh"] * (1 + flex_tariff.price_kwh_pct / 100) + flex_tariff.price_kwh
+        if flex_tariff.usage_tax:
+            flex_price *= 1.06
+        df_download["flex_price_eur_kwh"] = flex_price
+
     # Prepare data for spot price-only download (hourly resolution)
-    excel_spot_data_df = df.set_index("timestamp").resample("h").first().reset_index()[["timestamp", "spot_price_eur_kwh"]].dropna()
+    spot_cols = ["timestamp", "spot_price_eur_kwh"]
+    if "flex_price_eur_kwh" in df_download.columns:
+        spot_cols.append("flex_price_eur_kwh")
+        
+    excel_spot_data_df = df_download.set_index("timestamp").resample("h").first().reset_index()[spot_cols].dropna()
     excel_spot_bytes = to_excel(excel_spot_data_df)
     
     # Prepare full analysis data for download
-    excel_full_bytes = to_excel(df.drop(columns=["date"], errors="ignore"))
+    excel_full_bytes = to_excel(df_download.drop(columns=["date"], errors="ignore"))
 
     return excel_full_bytes, excel_spot_bytes
 
-def render_download_tab(df: pd.DataFrame, start_date: date, end_date: date):
+def render_download_tab(df: pd.DataFrame, flex_tariff: Tariff, start_date: date, end_date: date):
     """Renders the content for the Download tab."""
-    excel_full_data, excel_spot_data = _compute_download_data(df)
+    excel_full_data, excel_spot_data = _compute_download_data(df, flex_tariff)
     
     st.subheader(t("download_header"))
     

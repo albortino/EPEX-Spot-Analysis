@@ -49,6 +49,22 @@
         "feedin": false,
         "end_timestamp_col": null,
         "preprocess_date_func": null
+    },
+    {
+        "name": "Smart Meter Export (Verbrauch [kWh])",
+        "usage_col": "!Verbrauch [kWh]",
+        "timestamp_col": "Datum",
+        "time_sub_col": "Zeit von",
+        "date_format": "%d.%m.%Y %H:%M:%S",
+        "other_cols": [],
+        "should_skip_func": null,
+        "fixup_timestamp": false,
+        "separator": ";",
+        "decimal": ",",
+        "skiprows": 0,
+        "encoding": "utf-8-sig",
+        "feedin": false,
+        "end_timestamp_col": null,
+        "preprocess_date_func": null
     }
-
 ]

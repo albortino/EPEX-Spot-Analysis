@@ -169,5 +169,8 @@
     "col_avg_flex_price": "Avg. Flex Price (€/kWh)",
     "col_avg_static_price": "Avg. Static Price (€/kWh)",
     "total_row_label": "Total",
-    "average_row_label": "Average"
+    "average_row_label": "Average",
+    "total_consumption_metric": "Total Consumption",
+    "avg_consumption_per_month_metric": "Avg. Monthly Consumption",
+    "estimated_consumption_per_year_metric": "Estimated Yearly Consumption"
 }

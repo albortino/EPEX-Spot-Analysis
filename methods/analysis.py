@@ -218,29 +218,56 @@ def compute_absence_data(df: pd.DataFrame, base_threshold: float, absence_thresh
 def compute_price_distribution_data(df: pd.DataFrame, resolution: str) -> pd.DataFrame:
     """Computes and caches the quartile price data for the selected resolution."""
     logger.log("Computing Price Distribution Data")
-    price_agg_dict = {"spot_price_eur_kwh": [("q1", lambda x: x.quantile(0.25)), ("median", "median"), ("mean", "mean"), ("q3", lambda x: x.quantile(0.75))]}
+    price_agg_dict = {
+        "spot_price_eur_kwh": [
+            ("q1", lambda x: x.quantile(0.25)),
+            ("median", "median"),
+            ("mean", "mean"),
+            ("q3", lambda x: x.quantile(0.75))
+        ]
+    }
     
-    config = get_aggregation_config(df, resolution)
-    # Drop NA before aggregation to avoid issues with empty groups
-    df_price = df.dropna(subset=["spot_price_eur_kwh"]).groupby(config["grouper"]).agg(price_agg_dict)
-    df_price.columns = ["Spot Price Q1", "Spot Price Median", "Spot Price Mean", "Spot Price Q3"]
-    df_price.index = df_price.index.map(config["x_axis_map"])
-    df_price.index.name = config["name"]
-    # Reindex to ensure correct chronological order (e.g., Jan, Feb, Mar...)
-    # Then, drop any rows that are all NA, which happens for months with no data.
-    df_price = df_price.reindex(config["x_axis_map"].values()).dropna(how="all")
+    df_valid = df.dropna(subset=["spot_price_eur_kwh"]).copy()
+    if df_valid.empty:
+        return pd.DataFrame(columns=["Spot Price Q1", "Spot Price Median", "Spot Price Mean", "Spot Price Q3"])
+
+    if resolution == "Hourly":
+        config = get_aggregation_config(df_valid, resolution)
+        df_price = df_valid.groupby(config["grouper"]).agg(price_agg_dict)
+        df_price.columns = ["Spot Price Q1", "Spot Price Median", "Spot Price Mean", "Spot Price Q3"]
+        df_price.index = df_price.index.map(config["x_axis_map"])
+        df_price.index.name = config["name"]
+        df_price = df_price.reindex(config["x_axis_map"].values()).dropna(how="all")
+    else:
+        freq_map = {"Weekly": "W-MON", "Monthly": "ME"}
+        date_format = "%G-W%V" if resolution == "Weekly" else "%Y-%m"
+        axis_name = "Week" if resolution == "Weekly" else "Month"
+
+        grouper = pd.Grouper(key="timestamp", freq=freq_map.get(resolution, "ME"))
+        df_price = df_valid.groupby(grouper).agg(price_agg_dict)
+        df_price.columns = ["Spot Price Q1", "Spot Price Median", "Spot Price Mean", "Spot Price Q3"]
+        df_price = df_price.dropna(how="all")
+        df_price.index = df_price.index.strftime(date_format)
+        df_price.index.name = axis_name
+
     return df_price
 
 @st.cache_data(ttl=3600)
 def compute_heatmap_data(df: pd.DataFrame) -> pd.DataFrame:
     """Computes and caches the data needed for the price heatmap."""
     logger.log("Computing Heatmap Data")
-    df_pvt = df.pivot_table(values="spot_price_eur_kwh", index=df["timestamp"].dt.month, columns=df["timestamp"].dt.hour, aggfunc="mean")
-    
-    # Create a copy and convert integer column names to strings for plotly compatibility.
+    # Use YYYY-MM string as index so rows are ordered chronologically across years.
+    year_month = df["timestamp"].dt.strftime("%Y-%m")
+    df_pvt = df.pivot_table(
+        values="spot_price_eur_kwh",
+        index=year_month,
+        columns=df["timestamp"].dt.hour,
+        aggfunc="mean"
+    )
     df_pvt = df_pvt.copy()
     df_pvt.columns = df_pvt.columns.map(str)
-    
+    # Ensure chronological row order (string comparison on YYYY-MM is correct).
+    df_pvt = df_pvt.sort_index()
     return df_pvt
 
 @st.cache_data(ttl=3600)
