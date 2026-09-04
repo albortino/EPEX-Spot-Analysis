@@ -1,0 +1,62 @@
+[
+  {
+    "name": "Feel Good Smart (Energie AG)",
+    "link": "https://www.energieag.at/privat/strom/flexible-tarife/smart",
+    "summer_sun_price_gross": 0.0499,
+    "winter_sun_price_gross": 0.0990,
+    "summer_regular_price_gross": 0.1390,
+    "winter_regular_price_gross": 0.1390,
+    "monthly_fee_gross": 5.28,
+    "last_updated": "2026-09-04"
+  },
+  {
+    "name": "Optima Garant Sonne Strom (EVN)",
+    "link": "https://www.evn.at",
+    "summer_sun_price_gross": 0.0828,
+    "winter_sun_price_gross": null,
+    "summer_regular_price_gross": 0.1260,
+    "winter_regular_price_gross": 0.1260,
+    "monthly_fee_gross": 7.20,
+    "last_updated": "2026-09-04"
+  },
+  {
+    "name": "dual fix privat (TIWAG)",
+    "link": "https://www.tiwag.at/privat/strom/stromprodukte/",
+    "summer_sun_price_gross": 0.0588,
+    "winter_sun_price_gross": null,
+    "summer_regular_price_gross": 0.1176,
+    "winter_regular_price_gross": 0.1176,
+    "monthly_fee_gross": 2.20,
+    "last_updated": "2026-09-04"
+  },
+  {
+    "name": "IKB-dual fix (IKB)",
+    "link": "https://www.ikb.at/energie/stromtarife-privat",
+    "summer_sun_price_gross": 0.05998,
+    "winter_sun_price_gross": null,
+    "summer_regular_price_gross": 0.11995,
+    "winter_regular_price_gross": 0.11995,
+    "monthly_fee_gross": 2.20,
+    "last_updated": "2026-09-04"
+  },
+  {
+    "name": "oeko Time (oekostrom AG)",
+    "link": "https://oekostrom.at/strom/",
+    "summer_sun_price_gross": 0.0576,
+    "winter_sun_price_gross": null,
+    "summer_regular_price_gross": 0.1488,
+    "winter_regular_price_gross": 0.1884,
+    "monthly_fee_gross": 6.00,
+    "last_updated": "2026-09-04"
+  },
+  {
+    "name": "Strom Duo (illwerke vkw)",
+    "link": "https://www.vkw.at/produkte/strom/strom-duo",
+    "summer_sun_price_gross": 0.1008,
+    "winter_sun_price_gross": null,
+    "summer_regular_price_gross": 0.1344,
+    "winter_regular_price_gross": 0.1344,
+    "monthly_fee_gross": 3.60,
+    "last_updated": "2026-09-04"
+  }
+]

@@ -25,8 +25,8 @@ def test_validation_reports_price_coverage():
 
 def test_monthly_fee_is_prorated_per_real_interval():
     data = frame(["2024-01-01T00:00Z", "2024-01-01T01:00Z"])
-    tariff = Tariff("fixed", TariffType.STATIC, 0, 31)
-    costs = TariffManager.__new__(TariffManager)._calculate_static_cost(data, tariff)
+    tariff = Tariff("fixed", TariffType.FIXED, 0, 31)
+    costs = tariff.calculate_cost(data)
     assert costs.sum() == 2 / 24
 
 

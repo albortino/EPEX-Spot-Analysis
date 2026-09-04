@@ -2,13 +2,14 @@ import streamlit as st
 import pandas as pd
 import random
 from datetime import date
+from typing import Optional
 import numpy as np
 import plotly.graph_objects as go
 import io
 
 from src.i18n import t
 from src.config import *
-from src.tariffs import Tariff, TariffManager, TariffType
+from src.tariffs import Tariff, TariffManager, TariffType, SpotTariff, FixedTariff, TimeVariableTariff
 from src.utils import to_excel, get_intervals_per_day, get_aggregation_config, has_granular_resolution, get_min_max_date, DataQuality
 import src.charts as charts
 from src.logger import logger
@@ -105,152 +106,127 @@ def render_upload_file():
 
     return st.session_state.get("file_uploader")
 
-def _render_tariff_selection_widgets(_tariff_manager: TariffManager, expanded: bool = True, key_prefix: str = "") -> tuple[Tariff, Tariff]:
-    """Renders tariff selection expanders in the UI for user customization."""
+def _render_tariff_selection_widgets(_tariff_manager: TariffManager, expanded: bool = True, key_prefix: str = "") -> tuple[Tariff, Tariff, Tariff]:
+    """Renders tariff selection expanders in the UI for user customization across 3 tariff types."""
     logger.log("Rendering Tariff Selection")
     
-    options = [
-        (t("flexible_plan_title"), _tariff_manager.get_flex_tariffs_with_custom()),
-        (t("static_plan_title"), _tariff_manager.get_static_tariffs_with_custom())
-    ]
-
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     final_tariffs = {}
 
-    # Helper function to render a single tariff selector
-    def render_selector(column, title, tariff_options, tariff_key):
-        with column:
-            with st.expander(title, expanded=expanded):
-                tariff_type_str = title.split(" ")[0]
-                selected_name = st.selectbox(
-                    t("select_tariff_type", tariff_type=tariff_type_str),
-                    options=list(tariff_options.keys()),
-                    index=len(tariff_options) - 1,
-                    key=f"{key_prefix}_select_{tariff_type_str}"
-                )
-                selected_tariff = tariff_options[selected_name]
-                
-                price_label = t("on_top_price") if selected_tariff.type == TariffType.FLEXIBLE else t("price_per_kwh")
-                
-                price_kwh = st.number_input(price_label, value=selected_tariff.price_kwh, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_{tariff_type_str}_price")
-                
-                price_kwh_pct = 0.0
-                if selected_tariff.type == TariffType.FLEXIBLE:
-                    price_kwh_pct = st.number_input(t("variable_price_pct"), value=selected_tariff.price_kwh_pct, min_value=0.0, max_value=100.0, step=1.0, format="%.1f", key=f"{key_prefix}_{tariff_type_str}_pct")
-                monthly_fee = st.number_input(t("monthly_fee"), value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{key_prefix}_{tariff_type_str}_fee")
-                usage_tax = st.checkbox(t("include_usage_fee"), value=False, key=f"{key_prefix}_{tariff_type_str}_usage_tax")
-                
-                final_tariffs[tariff_key] = Tariff(
-                    name=selected_name, 
-                    type=selected_tariff.type, 
-                    price_kwh=price_kwh, 
-                    monthly_fee=monthly_fee, 
-                    price_kwh_pct=price_kwh_pct,
-                    usage_tax=usage_tax)
-
-    # Render selectors in columns
-    render_selector(col1, options[0][0], options[0][1], "flex")
-    render_selector(col2, options[1][0], options[1][1], "static")
-
-    return final_tariffs["flex"], final_tariffs["static"]
-
-def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, str, date, date, str, float]:
-    """Renders all sidebar inputs and returns the configuration values."""
-    logger.log("Rendering Sidebar")
-    with st.sidebar:
-        st.header(t("configuration"))
-
-        # Mode Selection
-        is_expert_mode = st.toggle(
-            "Expert Mode",
-            value=False,
-            help="Enable for in-depth analysis and more configuration options."
-        )
-        mode = "Expert" if is_expert_mode else "Basic"
-        
-        # 1. Country Selection for EPEX
-        country_select = {"Austria": "at", "Germany": "de"}
-        
-        with st.expander(t("select_country"), expanded=False):
-            selected_country = st.selectbox(label=t("select_country_label"), options=country_select.keys(), index=0)
-            awattar_country = country_select[selected_country]
-
-        # 2. Analysis Period Selection (with Reset button)
-        with st.expander(t("select_analysis_period"), expanded=True):
-            min_date, max_date = get_min_max_date(df, today_as_max=TODAY_IS_MAX_DATE)
-            
-            if st.button(t("reset_to_default")):
-                st.session_state.date_range_selector = (min_date, max_date)
-                st.rerun()
-
-            curr_range = st.session_state.get("date_range_selector")
-            if isinstance(curr_range, (tuple, list)) and len(curr_range) == 2:
-                if curr_range[0] < min_date or curr_range[1] > max_date or curr_range[0] > max_date:
-                    st.session_state.date_range_selector = (min_date, max_date)
-
-            # The `key` parameter is crucial. It links the widget's state to st.session_state
-            selected_range = st.date_input(
-                t("date_input_label"),
-                value=(min_date, max_date),  # This sets the default on the first run
-                min_value=min_date,
-                max_value=max_date,
-                format="DD.MM.YYYY",
-                key="date_range_selector",  # The link to session state
-                label_visibility="collapsed"
+    # 1. Spot Tariff Selector
+    with col1:
+        with st.expander(t("flexible_plan_title"), expanded=expanded):
+            spot_options = _tariff_manager.get_flex_tariffs_with_custom()
+            selected_name = st.selectbox(
+                t("select_tariff_type", tariff_type=t("flexible_plan_title")),
+                options=list(spot_options.keys()),
+                index=len(spot_options) - 1,
+                key=f"{key_prefix}_select_spot"
+            )
+            selected_tariff = spot_options[selected_name]
+            price_kwh = st.number_input(t("on_top_price"), value=selected_tariff.price_kwh, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_spot_price")
+            price_kwh_pct = st.number_input(t("variable_price_pct"), value=selected_tariff.price_kwh_pct, min_value=0.0, max_value=100.0, step=1.0, format="%.1f", key=f"{key_prefix}_spot_pct")
+            monthly_fee = st.number_input(t("monthly_fee"), value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{key_prefix}_spot_fee")
+            usage_tax = st.checkbox(t("include_usage_fee"), value=False, key=f"{key_prefix}_spot_usage_tax")
+            final_tariffs["spot"] = SpotTariff(
+                name=selected_name,
+                price_kwh=price_kwh,
+                price_kwh_pct=price_kwh_pct,
+                monthly_fee=monthly_fee,
+                usage_tax=usage_tax,
+                link=selected_tariff.link
             )
 
-            # Quarter selection
-            quarter_options = ["All", "Q1", "Q2", "Q3", "Q4"]
-            selected_quarter = st.selectbox(
-                t("select_quarter_label"),
-                options=quarter_options,
-                index=0, # Default to "All"
-                key="quarter_selector"
+    # 2. Time-Variable Tariff Selector
+    with col2:
+        with st.expander(t("variable_plan_title"), expanded=expanded):
+            var_options = _tariff_manager.get_variable_tariffs_with_custom()
+            selected_name = st.selectbox(
+                t("select_tariff_type", tariff_type=t("variable_plan_title")),
+                options=list(var_options.keys()),
+                index=len(var_options) - 1,
+                key=f"{key_prefix}_select_var"
+            )
+            selected_tariff = var_options[selected_name]
+            summer_sun_price = st.number_input(t("summer_sun_price"), value=selected_tariff.summer_sun_price if selected_tariff.summer_sun_price is not None else 0.05, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_var_summer_sun")
+            has_winter_sun = st.checkbox("WinterSonne (10-16h)", value=(selected_tariff.winter_sun_price is not None), key=f"{key_prefix}_var_has_winter_sun")
+            winter_sun_price = None
+            if has_winter_sun:
+                default_w = selected_tariff.winter_sun_price if selected_tariff.winter_sun_price is not None else 0.10
+                winter_sun_price = st.number_input(t("winter_sun_price"), value=default_w, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_var_winter_sun")
+            summer_regular_price = st.number_input(t("summer_regular_price"), value=selected_tariff.summer_regular_price, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_var_summer_regular")
+            winter_regular_price = st.number_input(t("winter_regular_price"), value=selected_tariff.winter_regular_price, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_var_winter_regular")
+            monthly_fee = st.number_input(t("monthly_fee"), value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{key_prefix}_var_fee")
+            usage_tax = st.checkbox(t("include_usage_fee"), value=False, key=f"{key_prefix}_var_usage_tax")
+            final_tariffs["variable"] = TimeVariableTariff(
+                name=selected_name,
+                summer_sun_price=summer_sun_price,
+                winter_sun_price=winter_sun_price,
+                summer_regular_price=summer_regular_price,
+                winter_regular_price=winter_regular_price,
+                monthly_fee=monthly_fee,
+                usage_tax=usage_tax,
+                link=selected_tariff.link
             )
 
-        # Split into start and end dates
-        if isinstance(selected_range, tuple) and len(selected_range) == 2:
-            start_date, end_date = selected_range
-        else:
-            # Fallback for the rare case where only one date is returned
-            start_date, end_date = selected_range[0], max_date
-        
-        # 4. Load Shifting Simulation
-        with st.expander(t("simulate_consumption_shifting"), expanded=False):
-            st.markdown(t("simulate_shifting_markdown"), help=t("simulate_shifting_help"))
-            shift_percentage = st.slider(t("shift_peak_load_slider"), min_value=0, max_value=100, value=0, step=5)
+    # 3. Fixed Tariff Selector
+    with col3:
+        with st.expander(t("static_plan_title"), expanded=expanded):
+            fixed_options = _tariff_manager.get_static_tariffs_with_custom()
+            selected_name = st.selectbox(
+                t("select_tariff_type", tariff_type=t("static_plan_title")),
+                options=list(fixed_options.keys()),
+                index=len(fixed_options) - 1,
+                key=f"{key_prefix}_select_fixed"
+            )
+            selected_tariff = fixed_options[selected_name]
+            price_kwh = st.number_input(t("price_per_kwh"), value=selected_tariff.price_kwh, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_fixed_price")
+            monthly_fee = st.number_input(t("monthly_fee"), value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{key_prefix}_fixed_fee")
+            usage_tax = st.checkbox(t("include_usage_fee"), value=False, key=f"{key_prefix}_fixed_usage_tax")
+            final_tariffs["fixed"] = FixedTariff(
+                name=selected_name,
+                price_kwh=price_kwh,
+                monthly_fee=monthly_fee,
+                usage_tax=usage_tax,
+                link=selected_tariff.link
+            )
 
-        return mode, awattar_country, start_date, end_date, selected_quarter, shift_percentage
+    return final_tariffs["spot"], final_tariffs["variable"], final_tariffs["fixed"]
 
-def render_tariff_selection_header(df: pd.DataFrame, tariff_manager: TariffManager, country: str, key_prefix: str = "") -> tuple[Tariff, Tariff]:
+def render_tariff_selection_header(df: pd.DataFrame, tariff_manager: TariffManager, country: str, key_prefix: str = "") -> tuple[Tariff, Tariff, Tariff]:
     """Renders the main tariff selection UI on the main page."""
     with st.expander(t("select_tariff_plan"), expanded=True):
         with st.container(border=False):
-
             compare_cheapest = st.checkbox(t("compare_cheapest_tariffs"), value=True, help=t("compare_cheapest_tariffs_help"), key=f"{key_prefix}_compare_cheapest")
             
             if compare_cheapest:
-                # Lazily import to avoid circular dependency
                 from src.analysis import compare_all_tariffs
-                final_flex_tariff, final_static_tariff = compare_all_tariffs(tariff_manager, df, country)
+                final_flex_tariff, final_var_tariff, final_static_tariff = compare_all_tariffs(tariff_manager, df, country)
                 
-                col1, col2 = st.columns(2)
+                col1, col2, col3 = st.columns(3)
                 with col1:
                     if final_flex_tariff:
                         flex_info = t("cheapest_flex_tariff_info", tariff_name=final_flex_tariff.name)
                     else:
                         flex_info = t("no_predefined_flex_tariffs")
-                        # Create a dummy tariff to avoid errors downstream
-                        final_flex_tariff = Tariff(name="Dummy", type=TariffType.FLEXIBLE, price_kwh=0, monthly_fee=0)
+                        final_flex_tariff = SpotTariff(name="Dummy", price_kwh=0, monthly_fee=0)
                     st.info(flex_info)
                 with col2:
+                    if final_var_tariff:
+                        var_info = t("cheapest_variable_tariff_info", tariff_name=final_var_tariff.name)
+                    else:
+                        var_info = t("no_predefined_variable_tariffs")
+                        final_var_tariff = TimeVariableTariff(name="Dummy", regular_price=0, monthly_fee=0)
+                    st.info(var_info)
+                with col3:
                     static_info = t("cheapest_static_tariff_info", tariff_name=final_static_tariff.name) if final_static_tariff else t("no_predefined_static_tariffs")
+                    if not final_static_tariff:
+                        final_static_tariff = FixedTariff(name="Dummy", price_kwh=0, monthly_fee=0)
                     st.info(static_info)
                 
-                return final_flex_tariff, final_static_tariff
+                return final_flex_tariff, final_var_tariff, final_static_tariff
             else:
-                final_flex_tariff, final_static_tariff = _render_tariff_selection_widgets(tariff_manager, expanded=True, key_prefix=key_prefix)
-                return final_flex_tariff, final_static_tariff
+                return _render_tariff_selection_widgets(tariff_manager, expanded=True, key_prefix=key_prefix)
 
 def render_absence_days(df: pd.DataFrame, base_threshold: float, absence_threshold: float) -> pd.DataFrame:
     """Adds a sidebar option to remove days with very low consumption."""
@@ -278,8 +254,13 @@ def render_absence_days(df: pd.DataFrame, base_threshold: float, absence_thresho
     return df
 
 @st.cache_data(ttl=3600)
-def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: Tariff):
-    """Displays the final tariff recommendation based on calculated savings."""
+def render_recommendation(
+    df: pd.DataFrame,
+    flex_tariff: Tariff,
+    static_tariff: Tariff,
+    variable_tariff: Optional[Tariff] = None
+):
+    """Displays the final tariff recommendation comparing spot, variable, and fixed plans."""
     logger.log("Rendering Recommendation")
     from src.analysis import compute_peak_timing_score
 
@@ -288,23 +269,33 @@ def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: 
         st.warning(t("recommendation_only_for_granular_data"))
         return
 
-    savings = df["total_cost_static"].sum() - df["total_cost_flexible"].sum()
-    peak_ratio = compute_peak_timing_score(df)
-    
+    tariffs_dict = {
+        "spot": (flex_tariff, df["total_cost_flexible"].sum() if "total_cost_flexible" in df.columns else df["total_cost_spot"].sum()),
+        "fixed": (static_tariff, df["total_cost_static"].sum() if "total_cost_static" in df.columns else df["total_cost_fixed"].sum())
+    }
+    if variable_tariff is not None and "total_cost_variable" in df.columns:
+        tariffs_dict["variable"] = (variable_tariff, df["total_cost_variable"].sum())
 
-    # Display the appropriate recommendation message
-    if savings > 0:
-        if peak_ratio > 0.4:
-            additional_text = t("peak_ratio_good_fit", peak_ratio=peak_ratio)
-        else:
-            additional_text = t("peak_ratio_potential")
-        
-        link_text = t("check_cheapest_offer", link=flex_tariff.link) if flex_tariff.link else ""
+    costs = {k: v[1] for k, v in tariffs_dict.items()}
+    cheapest_type = min(costs, key=costs.get)
+    most_expensive_type = max(costs, key=costs.get)
+    savings = costs[most_expensive_type] - costs[cheapest_type]
+    winning_tariff, _ = tariffs_dict[cheapest_type]
+    link_text = t("check_cheapest_offer", link=winning_tariff.link) if winning_tariff.link else ""
+
+    peak_ratio = compute_peak_timing_score(df)
+    if peak_ratio > 0.4:
+        additional_text = t("peak_ratio_good_fit", peak_ratio=peak_ratio)
+    else:
+        additional_text = t("peak_ratio_potential")
+
+    if cheapest_type == "spot":
         st.success(t("flex_plan_recommended", savings=savings, additional_text=additional_text, link_text=link_text), icon="✅")
-    elif savings < 0: # Only show warning if there are actual losses
-        link_text = t("check_cheapest_offer", link=static_tariff.link) if static_tariff.link else ""
-        st.warning(t("static_plan_recommended", abs_savings=-savings, link_text=link_text), icon="⚠️")
-    
+    elif cheapest_type == "variable":
+        st.success(t("variable_plan_recommended", savings=savings, additional_text="", link_text=link_text), icon="✅")
+    else:
+        st.info(t("static_plan_recommended", savings=savings, abs_savings=savings, link_text=link_text), icon="ℹ️")
+
     # Spacing
     st.container(height=50, border=False)
 
@@ -424,9 +415,11 @@ def _display_summary_table(df_summary: pd.DataFrame, is_granular: bool):
         "Period": t("col_period"),
         "Total Consumption": t("col_total_consumption"),
         "Total Flexible Cost": t("col_total_flex_cost"),
+        "Total Variable Cost": t("col_total_variable_cost"),
         "Total Static Cost": t("col_total_static_cost"),
         "Difference (€)": t("col_difference"),
         "Avg. Flex Price": t("col_avg_flex_price"),
+        "Avg. Variable Price": t("col_avg_variable_price"),
         "Avg. Static Price": t("col_avg_static_price")
     }
 
@@ -439,16 +432,28 @@ def _display_summary_table(df_summary: pd.DataFrame, is_granular: bool):
         col_names["Avg. Flex Price"]: "€{:.4f}",
         col_names["Avg. Static Price"]: "€{:.4f}"
     }
+    if col_names["Total Variable Cost"] in df_summary.columns or "Total Variable Cost" in df_summary.columns:
+        style_format[col_names["Total Variable Cost"]] = "€{:,.2f}"
+    if col_names["Avg. Variable Price"] in df_summary.columns or "Avg. Variable Price" in df_summary.columns:
+        style_format[col_names["Avg. Variable Price"]] = "€{:.4f}"
 
     # Select and rename columns
     df_display = df_summary.rename(columns=col_names)
     
     if is_granular:
-        cols_to_show = [col_names[c] for c in ["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)", "Avg. Flex Price", "Avg. Static Price"]]
+        candidate_cols = ["Period", "Total Consumption", "Total Flexible Cost"]
+        if "Total Variable Cost" in df_summary.columns:
+            candidate_cols.append("Total Variable Cost")
+        candidate_cols.extend(["Total Static Cost", "Difference (€)", "Avg. Flex Price"])
+        if "Avg. Variable Price" in df_summary.columns:
+            candidate_cols.append("Avg. Variable Price")
+        candidate_cols.append("Avg. Static Price")
+        cols_to_show = [col_names[c] for c in candidate_cols if c in col_names and col_names[c] in df_display.columns]
         styler = df_display[cols_to_show].style
-        styler = styler.map(difference_formatter, subset=[col_names["Difference (€)"]])
+        if col_names["Difference (€)"] in cols_to_show:
+            styler = styler.map(difference_formatter, subset=[col_names["Difference (€)"]])
     else:
-        cols_to_show = [col_names[c] for c in ["Period", "Total Consumption", "Total Static Cost", "Avg. Static Price"]]
+        cols_to_show = [col_names[c] for c in ["Period", "Total Consumption", "Total Static Cost", "Avg. Static Price"] if c in col_names]
         styler = df_display[cols_to_show].style
 
     styler = styler.format(style_format)
@@ -464,14 +469,23 @@ def _compute_col_vals(df: pd.DataFrame, is_granular: bool, func, func_name: str)
 
     # Add conditional columns based on data granularity
     if is_granular:
-        result["Total Flexible Cost"] = func(df["Total Flexible Cost"])
-        result["Total Static Cost"] = func(df["Total Static Cost"])
-        result["Difference (€)"] = func(df["Difference (€)"])
+        if "Total Flexible Cost" in df.columns:
+            result["Total Flexible Cost"] = func(df["Total Flexible Cost"])
+        if "Total Variable Cost" in df.columns:
+            result["Total Variable Cost"] = func(df["Total Variable Cost"])
+        if "Total Static Cost" in df.columns:
+            result["Total Static Cost"] = func(df["Total Static Cost"])
+        if "Difference (€)" in df.columns:
+            result["Difference (€)"] = func(df["Difference (€)"])
         # For averages, we need to recalculate from totals, not average the averages
         if func_name == "Average":
             total_consumption = df["Total Consumption"].sum()
-            result["Avg. Flex Price"] = df["Total Flexible Cost"].sum() / total_consumption if total_consumption > 0 else 0
-            result["Avg. Static Price"] = df["Total Static Cost"].sum() / total_consumption if total_consumption > 0 else 0
+            if "Total Flexible Cost" in df.columns:
+                result["Avg. Flex Price"] = df["Total Flexible Cost"].sum() / total_consumption if total_consumption > 0 else 0
+            if "Total Variable Cost" in df.columns:
+                result["Avg. Variable Price"] = df["Total Variable Cost"].sum() / total_consumption if total_consumption > 0 else 0
+            if "Total Static Cost" in df.columns:
+                result["Avg. Static Price"] = df["Total Static Cost"].sum() / total_consumption if total_consumption > 0 else 0
     else:
         result["Total Static Cost"] = func(df["Total Static Cost"])
     

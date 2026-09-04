@@ -59,10 +59,10 @@ def main():
     df_analysis_base = ui_components.render_absence_days(df_classified, base_threshold, config.ABSENCE_THRESHOLD)
     
     # --- Perform main analysis pipeline once, outside the tab loop ---
-    flex_tariff, static_tariff = ui_components.render_tariff_selection_header(df_merged, tariff_manager, country)
+    flex_tariff, variable_tariff, static_tariff = ui_components.render_tariff_selection_header(df_merged, tariff_manager, country)
     df_with_shifting = analysis.simulate_peak_shifting(df_analysis_base, shift_percentage)
-    df_analysis = tariff_manager.run_cost_analysis(df_with_shifting, flex_tariff, static_tariff)
-    ui_components.render_recommendation(df_analysis, flex_tariff, static_tariff)
+    df_analysis = tariff_manager.run_cost_analysis(df_with_shifting, flex_tariff, variable_tariff, static_tariff)
+    ui_components.render_recommendation(df_analysis, flex_tariff, static_tariff, variable_tariff)
 
     # --- Tab Definitions based on Mode ---
     if mode == "Expert":

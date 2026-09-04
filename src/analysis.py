@@ -214,11 +214,12 @@ def simulate_peak_shifting(df: pd.DataFrame, shift_percentage: float, window_hou
 # --- Data Computation for UI Components ---
 
 @st.cache_data(ttl=60*10)
-def compare_all_tariffs(_tariff_manager: TariffManager, df_consumption: pd.DataFrame, country: str) -> tuple[Tariff | None, Tariff | None]:
-    """Finds the cheapest flex and static tariffs from the predefined lists."""
+def compare_all_tariffs(_tariff_manager: TariffManager, df_consumption: pd.DataFrame, country: str) -> tuple[Tariff | None, Tariff | None, Tariff | None]:
+    """Finds the cheapest spot, time-variable, and fixed tariffs from the predefined lists."""
     logger.log("Calculating cheapest tariff comparison")
     
     flex_options = _tariff_manager.get_flex_tariffs_with_custom()
+    variable_options = _tariff_manager.get_variable_tariffs_with_custom()
     static_options = _tariff_manager.get_static_tariffs_with_custom()
     total_costs = {}
     
@@ -232,11 +233,15 @@ def compare_all_tariffs(_tariff_manager: TariffManager, df_consumption: pd.DataF
 
     for name, tariff in flex_options.items():
         if name == "Custom": continue
-        total_costs[("flex", name)] = _tariff_manager._calculate_flexible_cost(df, tariff).sum()
-    
-    for name, tariff  in static_options.items():
+        total_costs[("flex", name)] = tariff.calculate_cost(df).sum()
+
+    for name, tariff in variable_options.items():
         if name == "Custom": continue
-        total_costs[("static", name)] = _tariff_manager._calculate_static_cost(df, tariff).sum()
+        total_costs[("variable", name)] = tariff.calculate_cost(df).sum()
+    
+    for name, tariff in static_options.items():
+        if name == "Custom": continue
+        total_costs[("static", name)] = tariff.calculate_cost(df).sum()
     
     # Identify the cheapest tariffs based on the calculated costs robustly
     final_flex_tariff = None
@@ -245,13 +250,19 @@ def compare_all_tariffs(_tariff_manager: TariffManager, df_consumption: pd.DataF
         cheapest_flex_key = min(flex_keys, key=total_costs.get) #type: ignore
         final_flex_tariff = flex_options.get(cheapest_flex_key[1])
 
+    final_variable_tariff = None
+    var_keys = [k for k in total_costs if k[0] == "variable"]
+    if var_keys:
+        cheapest_var_key = min(var_keys, key=total_costs.get) #type: ignore
+        final_variable_tariff = variable_options.get(cheapest_var_key[1])
+
     final_static_tariff = None
     static_keys = [k for k in total_costs if k[0] == "static"]
     if static_keys:
         cheapest_static_key = min(static_keys, key=total_costs.get) #type: ignore
         final_static_tariff = static_options.get(cheapest_static_key[1])
     
-    return final_flex_tariff, final_static_tariff
+    return final_flex_tariff, final_variable_tariff, final_static_tariff
 
 @st.cache_data(ttl=3600)
 def compute_absence_data(df: pd.DataFrame, base_threshold: float, absence_threshold: float) -> list:
@@ -333,6 +344,9 @@ def compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataFr
         "Total Flexible Cost": ("total_cost_flexible", "sum"),
         "Total Static Cost": ("total_cost_static", "sum")
     }
+    if "total_cost_variable" in df.columns:
+        summary_agg_dict["Total Variable Cost"] = ("total_cost_variable", "sum")
+
     df_summary = df.groupby(grouper).agg(**summary_agg_dict).reset_index()
     df_summary = df_summary[df_summary["Total Consumption"] > 0.01] # Filter out empty periods
     
@@ -343,16 +357,28 @@ def compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataFr
     df_summary["Avg. Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
     if "Total Flexible Cost" in df_summary.columns:
         df_summary["Avg. Flex Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
+    if "Total Variable Cost" in df_summary.columns:
+        df_summary["Avg. Variable Price"] = df_summary["Total Variable Cost"] / df_summary["Total Consumption"]
 
     return df_summary
 
 @st.cache_data(ttl=3600)
 def compute_cumulative_savings_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Computes cumulative savings over time."""
+    """Computes cumulative savings of the cheapest tariff vs the most expensive tariff over time."""
     logger.log("Computing Cumulative Savings Data")
-    df_savings = df[["timestamp", "total_cost_static", "total_cost_flexible"]].copy()
-    df_savings = df_savings.sort_values("timestamp")
-    df_savings["savings"] = df_savings["total_cost_static"] - df_savings["total_cost_flexible"]
+    cost_cols = [c for c in ["total_cost_flexible", "total_cost_variable", "total_cost_static"] if c in df.columns]
+    df_savings = df[["timestamp"] + cost_cols].copy().sort_values("timestamp")
+    
+    if len(cost_cols) >= 2:
+        totals = {c: df[c].sum() for c in cost_cols}
+        cheapest_col = min(totals, key=totals.get)
+        expensive_col = max(totals, key=totals.get)
+        df_savings["savings"] = df_savings[expensive_col] - df_savings[cheapest_col]
+        df_savings["cheapest_col"] = cheapest_col
+        df_savings["expensive_col"] = expensive_col
+    else:
+        df_savings["savings"] = 0.0
+
     df_savings["cumulative_savings"] = df_savings["savings"].cumsum()
     return df_savings
 
@@ -481,6 +507,7 @@ def compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
     
     is_granular = "total_cost_flexible" in df.columns
     if is_granular: summary_agg["Total Flexible Cost"] = ("total_cost_flexible", "sum")
+    if "total_cost_variable" in df.columns: summary_agg["Total Variable Cost"] = ("total_cost_variable", "sum")
         
     yearly_agg = df.groupby("Year").agg(**summary_agg).reset_index()
     
@@ -489,6 +516,8 @@ def compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
             yearly_agg["Difference (€)"] = yearly_agg["Total Static Cost"] - yearly_agg["Total Flexible Cost"]
         yearly_agg["Avg. Static Price"] = yearly_agg["Total Static Cost"] / yearly_agg["Total Consumption"]
         if is_granular: yearly_agg["Avg. Flex Price"] = yearly_agg["Total Flexible Cost"] / yearly_agg["Total Consumption"]
+        if "Total Variable Cost" in yearly_agg.columns:
+            yearly_agg["Avg. Variable Price"] = yearly_agg["Total Variable Cost"] / yearly_agg["Total Consumption"]
 
     return yearly_agg
 

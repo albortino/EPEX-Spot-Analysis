@@ -1,7 +1,7 @@
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
-from src.config import FLEX_COLOR, MEKKO_BORDER, FLEX_COLOR_LIGHT, STATIC_COLOR, FLEX_COLOR_SHADE, FORECAST_PREDICTED_COLOR, FORECAST_ACTUAL_COLOR, FORECAST_UNCERTAINTY_COLOR, PERSONAL_DATA_COLOR, PERSONAL_DATA_COLOR_SHADE, PERSONAL_DATA_COLOR_LIGHT, BASE_COLOR, REGULAR_COLOR, PEAK_COLOR
+from src.config import FLEX_COLOR, MEKKO_BORDER, FLEX_COLOR_LIGHT, STATIC_COLOR, VARIABLE_COLOR, FLEX_COLOR_SHADE, FORECAST_PREDICTED_COLOR, FORECAST_ACTUAL_COLOR, FORECAST_UNCERTAINTY_COLOR, PERSONAL_DATA_COLOR, PERSONAL_DATA_COLOR_SHADE, PERSONAL_DATA_COLOR_LIGHT, BASE_COLOR, REGULAR_COLOR, PEAK_COLOR
 import calendar
 from prophet import Prophet
 from src.i18n import t
@@ -353,14 +353,22 @@ def get_avg_price_chart(df_summary: pd.DataFrame, is_granular: bool) -> go.Figur
     """Creates a line chart for comparing average prices per kWh."""
     fig = go.Figure()
 
-    if is_granular:
-        fig.add_trace(go.Scatter(x=df_summary["Period"], y=df_summary["Avg. Flexible Price"],
+    flex_col = "Avg. Flex Price" if "Avg. Flex Price" in df_summary.columns else "Avg. Flexible Price"
+    if is_granular and flex_col in df_summary.columns:
+        fig.add_trace(go.Scatter(x=df_summary["Period"], y=df_summary[flex_col],
                                  mode='lines', name=t("avg_flex_price_trace"),
                                  line=dict(color=FLEX_COLOR)))
 
-    fig.add_trace(go.Scatter(x=df_summary["Period"], y=df_summary["Avg Static Price"],
-                             mode='lines', name=t("avg_static_price_trace"),
-                             line=dict(color=STATIC_COLOR)))
+    if "Avg. Variable Price" in df_summary.columns:
+        fig.add_trace(go.Scatter(x=df_summary["Period"], y=df_summary["Avg. Variable Price"],
+                                 mode='lines', name=t("avg_variable_price_trace"),
+                                 line=dict(color=VARIABLE_COLOR)))
+
+    static_col = "Avg. Static Price" if "Avg. Static Price" in df_summary.columns else "Avg Static Price"
+    if static_col in df_summary.columns:
+        fig.add_trace(go.Scatter(x=df_summary["Period"], y=df_summary[static_col],
+                                 mode='lines', name=t("avg_static_price_trace"),
+                                 line=dict(color=STATIC_COLOR)))
 
     fig.update_layout(
         yaxis_title=t("avg_price_per_kwh_header").split(" (")[0], # Get base label
@@ -373,14 +381,20 @@ def get_total_cost_chart(df_summary: pd.DataFrame, is_granular: bool) -> go.Figu
     fig = go.Figure()
     df_plot = df_summary.set_index("Period")
 
-    if is_granular:
+    if is_granular and "Total Flexible Cost" in df_plot.columns:
         fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["Total Flexible Cost"],
                                  mode='lines', name=t("total_flex_cost_trace"),
                                  line=dict(color=FLEX_COLOR)))
 
-    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["Total Static Cost"],
-                             mode='lines', name=t("total_static_cost_trace"),
-                             line=dict(color=STATIC_COLOR)))
+    if "Total Variable Cost" in df_plot.columns:
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["Total Variable Cost"],
+                                 mode='lines', name=t("total_variable_cost_trace"),
+                                 line=dict(color=VARIABLE_COLOR)))
+
+    if "Total Static Cost" in df_plot.columns:
+        fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot["Total Static Cost"],
+                                 mode='lines', name=t("total_static_cost_trace"),
+                                 line=dict(color=STATIC_COLOR)))
 
     fig.update_layout(
         xaxis_title="Period",

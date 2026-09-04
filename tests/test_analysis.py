@@ -83,6 +83,27 @@ def test_compute_cumulative_savings_data(multi_day_15m_df):
     assert final_cumulative == pytest.approx(expected_total_diff)
 
 
+def test_compute_cost_comparison_with_variable_tariff(multi_day_15m_df):
+    """Verify cost aggregation includes Total Variable Cost when present."""
+    df = multi_day_15m_df.copy()
+    df["total_cost_variable"] = df["consumption_kwh"] * 0.12 + 0.001
+    summary = compute_cost_comparison_data(df, "Monthly")
+    assert "Total Variable Cost" in summary.columns
+    assert "Avg. Variable Price" in summary.columns
+    assert summary["Total Variable Cost"].sum() == pytest.approx(df["total_cost_variable"].sum())
+
+
+def test_compute_cumulative_savings_three_tariffs(multi_day_15m_df):
+    """Verify cumulative savings tracks cheapest vs most expensive among 3 tariffs."""
+    df = multi_day_15m_df.copy()
+    # static is ~0.15, flexible is varying ~0.05-0.15, make variable cheapest at 0.03
+    df["total_cost_variable"] = df["consumption_kwh"] * 0.03
+    savings_df = compute_cumulative_savings_data(df)
+    assert not savings_df.empty
+    expected_savings = df["total_cost_static"].sum() - df["total_cost_variable"].sum()
+    assert savings_df["cumulative_savings"].iloc[-1] == pytest.approx(expected_savings)
+
+
 def test_compute_absence_data():
     """Verify detection of absent days where consumption drops significantly below base load."""
     timestamps = pd.date_range("2024-01-01 00:00:00", periods=5 * 24, freq="h", tz="UTC")
