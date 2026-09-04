@@ -390,6 +390,37 @@ def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     heatmap_fig = charts.get_heatmap(heatmap_data)
     st.plotly_chart(heatmap_fig, config={"width": "stretch"}, key="price_heatmap_chart")
 
+def _render_usage_profile_section(df: pd.DataFrame, base_threshold: float, peak_threshold: float, key_prefix: str = "basic"):
+    """Renders the Usage Profile section with Marimekko chart and toggle between spot and variable prices."""
+    from src.analysis import compute_usage_profile_data
+
+    st.subheader(t("usage_profile_header"))
+
+    price_mode = "spot"
+    if "variable_price_eur_kwh" in df.columns:
+        selected_mode = st.segmented_control(
+            t("marimekko_price_basis_label"),
+            options=["spot", "variable"],
+            format_func=lambda x: t("flexible_plan_title") if x == "spot" else t("variable_plan_title"),
+            default="spot",
+            key=f"{key_prefix}_mekko_price_mode",
+            label_visibility="collapsed"
+        )
+        price_mode = selected_mode if selected_mode else "spot"
+
+    markdown_text = t("usage_profile_markdown_variable") if price_mode == "variable" else t("usage_profile_markdown_spot")
+    st.markdown(markdown_text)
+
+    col1, col2, _, _ = st.columns(4)
+    col1.metric(t("base_load_threshold_metric"), f"{base_threshold:.3f} kWh", help=t("base_load_threshold_help"))
+    absolute_peak_threshold = base_threshold + peak_threshold
+    col2.metric(t("peak_sustain_threshold_metric"), f"{absolute_peak_threshold:.3f} kWh", help=t("peak_sustain_threshold_help"))
+
+    profile_data = compute_usage_profile_data(df, price_type=price_mode)
+    if not profile_data.empty:
+        marimekko_fig = charts.get_marimekko_chart(profile_data, price_type=price_mode)
+        st.plotly_chart(marimekko_fig, config={"width": "stretch"}, key=f"{key_prefix}_marimekko_chart")
+
 def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_threshold: float, peak_threshold: float):
     """Renders the content for the 'Basic Dashboard' tab."""
     logger.log("Rendering Basic Dashboard Tab")
@@ -404,9 +435,8 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
 
     from src.analysis import compute_peak_timing_score
     col1, col2, col3, col4, col5 = st.columns(5)
-    days = max(int(round(days_count)), 1)
-    col1.metric(t("days_metric"), f"{days:,}")
-    col2.metric(t("total_consumption_metric"), f"{int(round(total_kwh)):,} kWh")
+    col1.metric(t("total_consumption_metric"), f"{total_kwh:,.1f} kWh")
+    col2.metric(t("days_analyzed_metric"), f"{days_count:.0f}")
     col3.metric(t("avg_consumption_per_month_metric"), f"{avg_month_kwh:,.1f} kWh")
     col4.metric(t("estimated_consumption_per_year_metric"), f"{int(round(est_year_kwh)):,} kWh")
 
@@ -453,20 +483,7 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
 
     # 4. Usage Profile
     if intervals > 24: # Only for granular data
-        st.subheader(t("usage_profile_header"))
-        st.markdown(t("usage_profile_markdown"))
-        
-        # Display Thresholds
-        col1, col2, _, _ = st.columns(4)
-        col1.metric(t("base_load_threshold_metric"), f"{base_threshold:.3f} kWh", help=t("base_load_threshold_help"))
-        # The peak_threshold passed is the influenceable part. Add base for the absolute value.
-        absolute_peak_threshold = base_threshold + peak_threshold
-        col2.metric(t("peak_sustain_threshold_metric"), f"{absolute_peak_threshold:.3f} kWh", help=t("peak_sustain_threshold_help"))
-
-        profile_data = compute_usage_profile_data(df)
-        if not profile_data.empty:
-            marimekko_fig = charts.get_marimekko_chart(profile_data)      
-            st.plotly_chart(marimekko_fig, config={"width": "stretch"}, key="basic_marimekko_chart")
+        _render_usage_profile_section(df, base_threshold, peak_threshold, key_prefix="basic")
 
     # 5. Comparison Table
     render_cost_comparison_tab(df, mode="basic")
@@ -760,23 +777,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         return
 
     # Consumption & Usage Profile (Marimekko Chart)
-    st.subheader(t("usage_profile_header"))
-    st.markdown(t("usage_profile_markdown"))
-    profile_data = compute_usage_profile_data(df_filtered)
-
-    # Define columns here so they are always available
-    col1, col2, _, _ = st.columns(4)
-
-    # Display Thresholds
-    col1.metric(t("base_load_threshold_metric"), f"{base_threshold:.3f} kWh", help=t("base_load_threshold_help"))
-    
-    # The peak_threshold passed is the influenceable part. Add base for the absolute value.
-    absolute_peak_threshold = base_threshold + peak_threshold
-    col2.metric(t("peak_sustain_threshold_metric"), f"{absolute_peak_threshold:.3f} kWh", help=t("peak_sustain_threshold_help"))
-
-    if not profile_data.empty:
-        marimekko_fig = charts.get_marimekko_chart(profile_data)      
-        st.plotly_chart(marimekko_fig, config={"width": "stretch"})
+    _render_usage_profile_section(df_filtered, base_threshold, peak_threshold, key_prefix="expert")
 
     # Example Day Breakdown
     st.subheader(t("example_day_breakdown_header"))

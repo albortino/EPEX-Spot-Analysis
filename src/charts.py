@@ -169,11 +169,15 @@ def get_daily_consumption_chart(df: pd.DataFrame) -> go.Figure:
     )
     return fig
 
-def get_marimekko_chart(df: pd.DataFrame, border_color: str = "#FFFFFF") -> go.Figure:
+def get_marimekko_chart(df: pd.DataFrame, border_color: str = "#FFFFFF", price_type: str = "spot") -> go.Figure:
     """Creates a marimekko chart with the different load profiles and their consumption as well as price."""
     bars = []
     cumulative_width = 0
     annotations = []
+
+    yaxis_title = t("mekko_y_axis_variable") if price_type == "variable" else t("mekko_y_axis_spot")
+    prop_label = t("mekko_proportion")
+    avg_price_label = t("mekko_avg_price_conjunctive")
 
     for _, row in df.iterrows():
         width = row["proportion"]
@@ -183,32 +187,32 @@ def get_marimekko_chart(df: pd.DataFrame, border_color: str = "#FFFFFF") -> go.F
         # Background bar (border)
         bars.append(
             go.Bar(
-        x=[cumulative_width-MEKKO_BORDER],
-        y=[price+MEKKO_BORDER/2],
-        width=[width],
-        marker=dict(color=border_color),
-        offset=-MEKKO_BORDER/2,
-        hoverinfo="skip",
-        showlegend=False
+                x=[cumulative_width - MEKKO_BORDER],
+                y=[price + MEKKO_BORDER / 2],
+                width=[width],
+                marker=dict(color=border_color),
+                offset=-MEKKO_BORDER / 2,
+                hoverinfo="skip",
+                showlegend=False,
             )
         )
         
         # Foreground bar (actual data)
         bars.append(
             go.Bar(
-        x=[cumulative_width - MEKKO_BORDER/2],
-        y=[price],
-        width=[width - 2*MEKKO_BORDER],
-        name=label,
-        marker=dict(color=PERSONAL_DATA_COLOR),
-        offset=0,
-        hovertemplate=(
-            f"<b>{label}</b><br>"
-            f"Proportion: {width:.1%}<br>"
-            f"Avg Price: €{price:.3f}/kWh<br>"
-            "<extra></extra>"
-        ),
-        showlegend=False
+                x=[cumulative_width - MEKKO_BORDER / 2],
+                y=[price],
+                width=[width - 2 * MEKKO_BORDER],
+                name=label,
+                marker=dict(color=PERSONAL_DATA_COLOR),
+                offset=0,
+                hovertemplate=(
+                    f"<b>{label}</b><br>"
+                    f"{prop_label}: {width:.1%}<br>"
+                    f"{avg_price_label}: €{price:.3f}/kWh<br>"
+                    "<extra></extra>"
+                ),
+                showlegend=False,
             )
         )
 
@@ -222,9 +226,9 @@ def get_marimekko_chart(df: pd.DataFrame, border_color: str = "#FFFFFF") -> go.F
 
         cumulative_width += width
 
-        # Create the figure
-        fig = go.Figure(data=bars)
-        fig.update_layout(
+    # Create the figure
+    fig = go.Figure(data=bars)
+    fig.update_layout(
         height=400,
         barmode="overlay",  # important: overlay to simulate border effect
         xaxis=dict(
@@ -232,15 +236,15 @@ def get_marimekko_chart(df: pd.DataFrame, border_color: str = "#FFFFFF") -> go.F
             tickvals=[0, 0.25, 0.5, 0.75, 1],
             ticktext=["0%", "25%", "50%", "75%", "100%"],
             title=t("mekko_x_axis"),
-            showgrid=False
+            showgrid=False,
         ),
         yaxis=dict(
-            title=t("mekko_y_axis"),
-            gridcolor="rgba(0,0,0,0.1)"
+            title=yaxis_title,
+            gridcolor="rgba(0,0,0,0.1)",
         ),
         annotations=annotations,
-        margin=dict(l=40, r=10, t=30, b=40)
-            )
+        margin=dict(l=40, r=10, t=30, b=40),
+    )
 
     return fig
 

@@ -264,6 +264,7 @@ class TariffManager:
 
         if variable_tariff is not None:
             df["total_cost_variable"] = variable_tariff.calculate_cost(df)
+            df["variable_price_eur_kwh"] = variable_tariff.get_price_series(df)
 
         if fixed_tariff is not None:
             df["total_cost_fixed"] = fixed_tariff.calculate_cost(df)

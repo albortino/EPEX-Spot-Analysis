@@ -204,6 +204,7 @@ def test_three_way_cost_analysis(sample_hourly_df):
     assert "total_cost_spot" in result_df.columns
     assert "total_cost_variable" in result_df.columns
     assert "total_cost_fixed" in result_df.columns
+    assert "variable_price_eur_kwh" in result_df.columns
     assert (result_df["total_cost_variable"] > 0).all()
 
 

@@ -383,21 +383,28 @@ def compute_cumulative_savings_data(df: pd.DataFrame) -> pd.DataFrame:
     return df_savings
 
 @st.cache_data(ttl=3600)
-def compute_usage_profile_data(df: pd.DataFrame) -> pd.DataFrame:
+def compute_usage_profile_data(df: pd.DataFrame, price_type: str = "spot") -> pd.DataFrame:
     """Computes and caches the proportion and average cost for each usage profile."""
-    logger.log("Computing Usage Profile Data")
-    
+    logger.log(f"Computing Usage Profile Data ({price_type})")
+
+    price_col = "variable_price_eur_kwh" if price_type == "variable" and "variable_price_eur_kwh" in df.columns else "spot_price_eur_kwh"
+    if price_col not in df.columns:
+        return pd.DataFrame()
+
     load_types = ["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]
     profile_data = []
     total_kwh = df["consumption_kwh"].sum()
     intervals_per_day = get_intervals_per_day(df)
-    
+
     for load in load_types:
-        kwh = df[load].sum()
+        if load not in df.columns:
+            continue
+        valid_mask = df[load].notna() & df[price_col].notna()
+        kwh = df.loc[valid_mask, load].sum()
         if kwh > 0.01:
-            avg_price = (df[load] * df["spot_price_eur_kwh"]).sum() / kwh
-            proportion = kwh / total_kwh
-            mean_daily_kwh = df[load].mean() * intervals_per_day
+            avg_price = (df.loc[valid_mask, load] * df.loc[valid_mask, price_col]).sum() / kwh
+            proportion = kwh / total_kwh if total_kwh > 0 else 0.0
+            mean_daily_kwh = df.loc[valid_mask, load].mean() * intervals_per_day
             profile_data.append({
                 "Profile": load.replace("_kwh", "").replace("_", " ").title(),
                 "kwh": kwh,

@@ -143,3 +143,30 @@ def test_compute_peak_timing_score(multi_day_15m_df):
     score = compute_peak_timing_score(df_classified)
     assert isinstance(score, (int, float))
     assert -100.0 <= score <= 100.0
+
+
+def test_compute_usage_profile_data_spot_and_variable(multi_day_15m_df):
+    """Verify compute_usage_profile_data works for both spot and variable prices and feeds marimekko chart."""
+    from src.analysis import compute_usage_profile_data
+    from src.charts import get_marimekko_chart
+
+    df_classified, _, _ = classify_usage(multi_day_15m_df.copy(), "Europe/Vienna")
+    df_classified["variable_price_eur_kwh"] = 0.08
+
+    profile_spot = compute_usage_profile_data(df_classified, price_type="spot")
+    assert not profile_spot.empty
+    assert "avg_price" in profile_spot.columns
+    assert "proportion" in profile_spot.columns
+
+    profile_var = compute_usage_profile_data(df_classified, price_type="variable")
+    assert not profile_var.empty
+    assert profile_var["avg_price"].tolist() == pytest.approx([0.08] * len(profile_var))
+
+    # Verify marimekko figures render for both modes
+    fig_spot = get_marimekko_chart(profile_spot, price_type="spot")
+    assert fig_spot is not None
+    assert len(fig_spot.data) > 0
+
+    fig_var = get_marimekko_chart(profile_var, price_type="variable")
+    assert fig_var is not None
+    assert len(fig_var.data) > 0

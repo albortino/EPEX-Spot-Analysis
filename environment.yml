@@ -13,3 +13,4 @@ dependencies:
   - xlsxwriter
   - requests
   - prophet
+  - pytz
