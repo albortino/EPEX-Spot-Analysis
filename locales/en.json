@@ -187,6 +187,7 @@
     "col_period": "Period",
     "col_total_consumption": "Total Consumption",
     "col_total_flex_cost": "Total Spot Cost",
+    "col_total_flexible_cost": "Total Spot Cost",
     "col_total_variable_cost": "Total Time-Variable Cost",
     "col_total_static_cost": "Total Fixed Cost",
     "col_difference": "Savings (€)",

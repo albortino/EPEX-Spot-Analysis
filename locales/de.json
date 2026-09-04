@@ -185,6 +185,7 @@
     "col_period": "Zeitraum",
     "col_total_consumption": "Gesamtverbrauch",
     "col_total_flex_cost": "Gesamtkosten Spotpreis",
+    "col_total_flexible_cost": "Gesamtkosten Spotpreis",
     "col_total_variable_cost": "Gesamtkosten Zeitvariabel",
     "col_total_static_cost": "Gesamtkosten Fixpreis",
     "col_difference": "Ersparnis (€)",
