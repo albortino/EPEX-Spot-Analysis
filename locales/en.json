@@ -170,9 +170,11 @@
     "col_avg_static_price": "Avg. Static Price (€/kWh)",
     "total_row_label": "Total",
     "average_row_label": "Average",
+    "days_metric": "Days",
     "total_consumption_metric": "Total Consumption",
     "avg_consumption_per_month_metric": "Avg. Monthly Consumption",
     "estimated_consumption_per_year_metric": "Estimated Yearly Consumption",
     "peak_timing_score_metric": "Peak Timing Score",
-    "peak_timing_score_help": "Percentage of your peak load (high-power spikes like EV charging or heat pumps) that occurred during the cheapest 25% of market-price hours each month. 100% means all your peaks were perfectly timed to cheap hours."
+    "peak_timing_score_help": "Percentage of your peak load (high-power spikes like EV charging or heat pumps) that occurred during the cheapest 25% of market-price hours each month. 100% means all your peaks were perfectly timed to cheap hours.",
+    "dataquality": "Data Quality"
 }

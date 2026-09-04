@@ -1,116 +1,96 @@
+# ⚡ Strompreis-Analyse Dashboard
 
-# Electricity Tariff Comparison Dashboard
+Ein interaktives Streamlit-Dashboard zur datengestützten Analyse des eigenen Stromverbrauchs und zum präzisen Tarifvergleich.
 
-This Streamlit application provides a comprehensive tool for analyzing your electricity consumption, comparing different tariff options (flexible vs. static), simulating the impact of peak load shifting, and gaining insights into your energy usage patterns.
+> **Kernziel des Projekts:**  
+> Analysiere anhand deines **tatsächlichen, historischen Verbrauchsverhaltens**, ob **dynamische/flexible Stromtarife (EPEX Spot)** für dich günstiger sind als **klassische statische Tarife (fester Arbeitspreis pro kWh)** – ganz ohne Schätzwerte oder Rätselraten.
 
-## Description
+---
 
-The dashboard allows users to upload their historical electricity consumption data (typically in CSV format) and compare the cost-effectiveness of various electricity tariffs. It fetches real-time EPEX spot prices for a selected country and overlays them with your consumption data. Key features include identifying the cheapest available tariffs, simulating savings through peak load shifting, and visualizing detailed consumption breakdowns and price trends.
+## 🚀 Live-Demo & Eigenbetrieb
 
-## Key Features
+- **Online nutzen:** Das Dashboard wird öffentlich gehostet – du kannst direkt im Browser deine Verbrauchsdaten hochladen und sofort loslegen. Die Daten werden vom Server verarbeitet aber nicht gespeichert! *(Link folgt / hier einfügen)*
+- **Self-Hosting / Lokal ausführen:** Du möchtest vollständige Kontrolle haben oder es weiterentwickeln? Die Anwendung lässt sich mit wenigen Befehlen vollständig lokal auf deinem eigenen Rechner ausführen.
 
-### Consumption Data Upload
+---
 
-Easily upload your historical electricity consumption data via a CSV file. The application supports parsing common formats for providers and can be extended for others.
+## Funktionen des Dashboards
 
-### **Dynamic Tariff Comparison**
+Viele Haushalte überlegen, zu einem dynamischen Börsenstromtarif (z. B. Tibber, aWATTar, etc.) zu wechseln. Doch lohnt sich das bei deinem individuellen Lastprofil und den aktuellen Strompreisen wirklich?
 
-* **Automatic Cheapest Tariff Detection:** Automatically identifies the most economical predefined flexible and static tariffs based on your uploaded consumption data.
-* **Custom Tariff Configuration:** Allows users to define their own flexible and static tariffs by specifying on-top prices, variable percentages, and monthly fees.
+Dieses Dashboard verschneidet deine historischen Smart-Meter-Messwerte (typischerweise als CSV) mit den echten stündlichen **EPEX-Spot-Börsenpreisen** deines Landes und liefert dir glasklare Antworten:
 
-### **Peak Load Shifting Stimulation**
+* **Echter Kostenvergleich:** Berechnet auf den Cent genau, was dich dein Strom im vergangenen Jahr mit flexiblen vs. statischen Tarifen gekostet hätte.
+* **Automatische Tarifempfehlung:** Erkennt automatisch den günstigsten vordefinierten statischen und flexiblen Tarif für dein individuelles Profil.
+* **Eigene Tarife simulieren:** Hinterlege eigene Arbeitspreise, Grundgebühren, Aufschläge oder prozentuale Börsenaufschläge deines Wunschanbieters.
+* **Lastverschiebung simulieren (Peak Load Shifting):** Was bringt es, wenn du z. B. 20 % deines Spitzenverbrauchs (z. B. E-Auto laden, Waschmaschine) in günstige Stunden verschiebst? Der Schieberegler zeigt dir das Einsparpotenzial in Euro.
+* **Detaillierte Lastprofil-Analyse:** Automatische Aufteilung deines Verbrauchs in Grundlast (`Base Load`), Regellast (`Regular Load`) und Spitzenlast (`Peak Load`).
+* **Interaktive Visualisierungen:**
+  * **Spotpreis-Heatmap:** Wann ist Strom typischerweise günstig oder teuer? (Uhrzeiten & Saisonalität).
+  * **Verbrauchs-Trends & Beispieltage:** Analysiere einzelne Tage oder langfristige Muster.
+  * **Jahresübersicht:** Detaillierter Jahresvergleich von Kosten und Verbrauch.
+* **Datenexport:** Exportiere bereinigte Analysedaten und EPEX-Spotpreise als Excel-Datei (`.xlsx`) für eigene Auswertungen.
+* **Urlaubstage filtern:** Schließe Abwesenheitstage automatisch aus, um verzerrende Tage ohne Normalverbrauch herauszurechnen.
 
-Simulate the potential cost savings achievable by shifting a configurable percentage of your peak electricity consumption to off-peak hours within a flexible time window.
+---
 
-### **Interactive Analysis Tabs**
+## Hinweise
 
-1) **Spot Price Analysis:**
-    * Visualize the distribution of EPEX spot prices over time (hourly, weekly, or monthly).
-    * Analyze average spot prices through an interactive heatmap showing daily and seasonal patterns.
-2) **Cost Comparison:**
-    * Compare total electricity costs and the effective price per kWh for different tariffs over daily, weekly, or monthly periods.
-    * Review a detailed table summarizing consumption, costs, and savings.
-3) **Usage Pattern Analysis:**
-    * Classify your hourly consumption into `Base Load`, `Regular Load`, and `Peak Load` based on dynamic thresholds.
-    * Understand the contribution of each load type to your total consumption and their associated average prices.
-    * Visualize consumption patterns with a daily breakdown for a selected example day.
-4) **Yearly Summary:**
-    * Provides an aggregated overview of total consumption and costs for each year present in your data.
-5) **Download Data:**
-    * Export the detailed analysis results and raw EPEX spot price data in XLSX format for further offline analysis.
+* **Privacy First:** Deine hochgeladenen CSV-Dateien werden ausschließlich im flüchtigen Speicher der aktuellen Browser-Sitzung verarbeitet. Es werden keine Benutzerkonten angelegt und keine Verbrauchshistorien gespeichert.
+* **Berechnungsumfang sind reine Energiekosten:** Das Dashboard berechnet die reinen **Energiekosten** inklusive Anbieter-Aufschlägen und monatlichen Grundgebühren. Netzentgelte, Steuern, Abgaben und staatliche Umlagen variieren je nach Netzbetreiber/Region und sind in den Musterberechnungen standardmäßig nicht enthalten.
+* **Keine Anlage- oder Wechselberatung:** Die hinterlegten Tarife dienen als Orientierungs- und Vergleichskatalog. Bitte prüfe die tagesaktuellen Konditionen direkt beim jeweiligen Anbieter (oder dem Tarifkalkulator des E-Control (https://www.e-control.at/tarifkalkulator#/)) vor Vertragsschluss. Es gibt kein Sponsoring, weshalb volle Transparenz gewährleistet wird.
 
-### **Intelligent Recommendations**
+---
 
-Receive data-driven recommendations on which tariff type (flexible or static) is likely to be more cost-effective for your usage profile, along with optimization tips.
+## Datenanforderungen
 
-### **Absence Day Handling**
+* **Verbrauchs-CSV:** Eine CSV-Datei mit deinem historischen Stromverbrauch (z. B. aus dem Kundenportal deines Netzbetreibers oder Smart-Meter-Gateways). Ideal sind 15-Minuten- oder 1-Stunden-Werte. Das Tool erkennt gängige Netzbetreiber- und Anbieterformate automatisch.
+* **Börsenstrompreise:** Werden für das gewählte Land (z. B. Deutschland, Österreich) und den ausgewählten Zeitraum vollautomatisch über die aWATTar-API abgerufen und lokal gecacht.
 
-Option to exclude days with unusually low consumption, improving the accuracy of baseline analysis and recommendations.
+---
 
-## How to Use
+## Lokale Installation
 
-1. **Clone the Repository**
-
+### 1. Repository klonen
 ```bash
 git clone <repository_url>
-cd your-repository-directory
+cd strompreis-analyse
 ```
 
-2. **Install Dependencies**
-
-Ensure you have Python and Conda (Anaconda or Miniconda) installed. Then, install the required libraries:
-
+### 2. Umgebung einrichten
+Mit Conda (empfohlen):
 ```bash
 conda env create -f environment.yml
+conda activate strompreis-analyse
 ```
+*Alternativ mit `pip`: `pip install -r requirements.txt` (sofern vorhanden).*
 
-3. **Run the Application**
-
-Launch the Streamlit application from your terminal:
-
+### 3. Dashboard starten
 ```bash
 streamlit run app.py
 ```
+Die Anwendung öffnet sich automatisch unter `http://localhost:8501`.
 
-4. **Upload Consumption Data**
 
-In the sidebar of the application, use the "Upload Your Consumption CSV" button to upload your electricity usage data. For best results, ensure your data is in hourly or 15-minute intervals.
 
-5. **Configure Settings**
+## 📁 Projektstruktur
 
-* **Country:** Select the country for which EPEX spot prices should be fetched (e.g., Germany, Austria).
-* **Analysis Period:** Define the start and end dates for your analysis.
-* **Tariff Plans:** Choose to automatically compare the cheapest predefined tariffs or manually configure your own flexible and static tariff details.
-* **Peak Load Shifting:** Adjust the slider to simulate shifting a percentage of your peak consumption.
+```text
+├── app.py                  # Streamlit-Haupteinstiegspunkt & UI-Orchestrierung
+├── methods/
+│   ├── config.py           # Globale Konfigurationen & Konstanten
+│   ├── data_loader.py      # EPEX-Spotpreis-Abruf (aWATTar API) & Caching
+│   ├── file_parser.py      # Automatischer Parser für verschiedene Smart-Meter-CSV-Formate
+│   ├── analysis.py         # Analyselogik (Lastprofil-Klassifizierung, Lastverschiebung)
+│   ├── tariffs.py          # Tarifverwaltung und Tarif-Kostenberechnungslogik
+│   ├── ui_components.py    # Streamlit-UI-Komponenten, Tabs & Seitenleiste
+│   ├── charts.py           # Plotly-Visualisierungen und Charts
+│   └── utils.py            # Hilfsfunktionen (Datumskonvertierung, Excel-Export)
+└── cache/                  # Lokaler Cache für abgerufene Preisdaten
+```
 
-6. **Explore Insights**
+---
 
-Navigate through the different tabs ("Spot Price Analysis", "Cost Comparison", "Usage Pattern Analysis", "Yearly Summary", "Download Data") to view detailed charts, tables, and recommendations.
+## Danksagung
 
-## Data Requirements
-
-* **Consumption Data:** A CSV file containing your electricity consumption. Key columns expected are a timestamp and a consumption value (e.g., `consumption_kwh`). The application is designed to be flexible with data granularity, but 15-minute intervals provide richer insights for usage pattern analysis. In case of any uncertainties please refer to the documentation in [awattar backtesting](https://awattar-backtesting.github.io/).
-* **Spot Prices:** The application automatically fetches hourly EPEX spot prices from the aWATTar API for the selected country and date range. These prices are cached locally to optimize performance.
-
-## Public deployment and calculation boundary
-
-Uploads are processed only for the active Streamlit session; the application does not create accounts or retain household consumption histories. Results are **energy-cost estimates**: they include the selected supplier's modeled energy price and monthly supplier fee, but exclude grid fees, taxes, subsidies, and tariff components not represented in the selected tariff record. The app blocks comparison when spot-price coverage is incomplete and shows data-quality diagnostics before presenting results.
-
-The built-in tariff list is a convenience catalog, not a switching offer. Verify each provider's current conditions and source page before making a contract decision.
-
-## File Structure Overview
-
-* `app.py`: The main script orchestrating the Streamlit application flow, loading modules, and rendering the UI.
-* `methods/`: Contains all supporting Python modules.
-    * `config.py`: Stores application-wide constants, configurations, and API-related settings.
-    * `data_loader.py`: Manages fetching EPEX spot prices from the aWATTar API and processing user-uploaded consumption data. Includes caching mechanisms.
-    * `analysis.py`: Implements the core analytical logic, including consumption classification (base, peak, regular) and peak load shifting simulation.
-    * `ui_components.py`: Handles the creation and rendering of all user interface elements, including sidebars, tabs, charts, and user inputs.
-    * `tariffs.py`: Defines the `Tariff` class and `TariffManager` for managing and calculating costs associated with different tariff structures.
-    * `utils.py`: Contains general utility functions used across the application (e.g., date handling, file export).
-    * `file_parser.py`: Houses the `ConsumptionDataParser` class responsible for parsing various CSV formats of consumption data. Interacts with [awattar backtesting](https://awattar-backtesting.github.io/) to use the exisitng javascript parsing logic.
-    * `charts.py`: Provides custom functions for generating specific plot types used in the dashboard.
-
-## Acknowledgements
-
-This project was influenced by and extends the functionality presented in the [awattar backtesting](https://awattar-backtesting.github.io/) project, providing a more detailed and user-friendly interface for electricity tariff analysis.
+Dieses Projekt basiert auf Ideen und Parser-Logiken des [awattar backtesting](https://awattar-backtesting.github.io/)-Projekts und erweitert dieses um moderne Auswertungen, Peak-Shifting-Simulationen und ein interaktives Dashboard.

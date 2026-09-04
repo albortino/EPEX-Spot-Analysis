@@ -12,6 +12,7 @@ from methods.tariffs import Tariff, TariffManager, TariffType
 from methods.utils import to_excel, get_intervals_per_day, get_aggregation_config, calculate_granular_data, get_min_max_date
 import methods.charts as charts
 from methods.logger import logger
+from methods.validation import DataQuality
 
 # --- Introduction ---
 def render_intro():
@@ -341,14 +342,16 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     est_year_kwh = total_kwh / (days_count / 365.25)
 
     from methods.analysis import compute_peak_timing_score
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric(t("total_consumption_metric"), f"{total_kwh:,.2f} kWh")
-    col2.metric(t("avg_consumption_per_month_metric"), f"{avg_month_kwh:,.2f} kWh")
-    col3.metric(t("estimated_consumption_per_year_metric"), f"{est_year_kwh:,.2f} kWh")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    days = max(int(round(days_count)), 1)
+    col1.metric(t("days_metric"), f"{days:,}")
+    col2.metric(t("total_consumption_metric"), f"{int(round(total_kwh)):,} kWh")
+    col3.metric(t("avg_consumption_per_month_metric"), f"{avg_month_kwh:,.1f} kWh")
+    col4.metric(t("estimated_consumption_per_year_metric"), f"{int(round(est_year_kwh)):,} kWh")
 
     if calculate_granular_data(df):
         score = compute_peak_timing_score(df)
-        col4.metric(t("peak_timing_score_metric"), f"{score:.0%}", help=t("peak_timing_score_help"))
+        col5.metric(t("peak_timing_score_metric"), f"{score:.0%}", help=t("peak_timing_score_help"))
 
     # 1. Price Chart (Monthly)
     st.subheader(t("price_over_time_header"))
@@ -794,3 +797,17 @@ def render_footer():
     """Renders the footer with information about the project and further links."""
     st.container(height=200, border=False)
     st.markdown(f'<div class="footer"><p style="text-align: center;">{t("footer_text")}</p></div>', unsafe_allow_html=True)
+
+# --- Data Quality ---
+def render_data_quality(quality: DataQuality, coverage: float | None = None) -> None:
+    """Show the evidence behind a result before presenting a tariff recommendation."""
+    with st.expander(t("dataquality"), expanded=not quality.usable):
+        st.caption(quality.message)
+        cols = st.columns(4)
+        cols[0].metric("Rows", f"{quality.rows:,}")
+        cols[1].metric("Resolution", f"{quality.resolution_minutes or '–'} min")
+        cols[2].metric("Duplicates", quality.duplicates)
+        cols[3].metric("Gaps", quality.gaps)
+        if coverage is not None:
+            st.metric("Spot-price coverage", f"{coverage:.0%}")
+

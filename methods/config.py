@@ -43,3 +43,17 @@ THRESHOLD_STABLE_TREND = 5
 # --- DEBUG Parameters ---
 TODAY_IS_MAX_DATE = True
 DEBUG = True
+
+
+# --- Peak Detection Parameters ---
+# Number of low-frequency harmonics (beyond DC) kept when reconstructing the
+# base signal via FFT. 0 = flat per-day base; 1 captures one slow daily rhythm.
+FFT_BASE_HARMONICS = 0
+
+# Hours of day considered "overnight" for anchoring the global base level
+OVERNIGHT_HOURS = (1, 5)
+
+# Minimum consecutive intervals a residual must exceed the peak amplitude for sustained pea
+# 1 = a single 15-min interval suffices (catches kettles, short bursts)
+PEAK_SUSTAIN_INTERVALS = 1
+

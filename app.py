@@ -6,7 +6,7 @@ import methods.ui_components as ui_components
 from methods.tariffs import TariffManager
 from methods.logger import logger
 from methods.utils import filter_dataframe, filter_by_quarter
-from methods.validation import inspect_consumption, inspect_price_coverage, render_data_quality
+from methods.validation import inspect_consumption, inspect_price_coverage
 
 
 # --- Page and App Configuration ---
@@ -49,7 +49,7 @@ def main():
     df_spot_prices = data_loader.get_spot_data(country, min_date, max_date)
     df_merged = data_loader.merge_consumption_with_prices(df_consumption, df_spot_prices)
     coverage = inspect_price_coverage(df_merged)
-    render_data_quality(quality, coverage)
+    ui_components.render_data_quality(quality, coverage)
     if df_merged.empty or coverage < 0.99:
         st.warning("No overlapping data found for the selected period. Please check your file's date range.")
         return
