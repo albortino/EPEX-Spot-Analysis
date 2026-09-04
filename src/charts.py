@@ -1,10 +1,10 @@
 import plotly.express as px
 import plotly.graph_objects as go
 import pandas as pd
-from methods.config import FLEX_COLOR, MEKKO_BORDER, FLEX_COLOR_LIGHT, STATIC_COLOR, FLEX_COLOR_SHADE, FORECAST_PREDICTED_COLOR, FORECAST_ACTUAL_COLOR, FORECAST_UNCERTAINTY_COLOR, PERSONAL_DATA_COLOR, PERSONAL_DATA_COLOR_SHADE, PERSONAL_DATA_COLOR_LIGHT, BASE_COLOR, REGULAR_COLOR, PEAK_COLOR
+from src.config import FLEX_COLOR, MEKKO_BORDER, FLEX_COLOR_LIGHT, STATIC_COLOR, FLEX_COLOR_SHADE, FORECAST_PREDICTED_COLOR, FORECAST_ACTUAL_COLOR, FORECAST_UNCERTAINTY_COLOR, PERSONAL_DATA_COLOR, PERSONAL_DATA_COLOR_SHADE, PERSONAL_DATA_COLOR_LIGHT, BASE_COLOR, REGULAR_COLOR, PEAK_COLOR
 import calendar
 from prophet import Prophet
-from methods.i18n import t
+from src.i18n import t
 
 def _get_interval_text(intervals_per_day: int, t) -> str:
     # Determine y-axis label based on data granularity
@@ -139,7 +139,7 @@ def get_daily_consumption_chart(df: pd.DataFrame) -> go.Figure:
         y=[weekday_mean.get(m, None) for m in all_months],
         mode="lines+markers",
         name=t("weekdays"),
-        line=dict(color=PERSONAL_DATA_COLOR, width=3),
+        line=dict(color=FLEX_COLOR_LIGHT, width=3),
         marker=dict(size=7)
     ))
 

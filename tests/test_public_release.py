@@ -2,9 +2,9 @@ from datetime import date
 
 import pandas as pd
 
-from methods.analysis import simulate_peak_shifting
-from methods.tariffs import Tariff, TariffManager, TariffType
-from methods.utils import inspect_consumption, inspect_price_coverage
+from src.analysis import simulate_peak_shifting
+from src.tariffs import Tariff, TariffManager, TariffType
+from src.utils import inspect_consumption, inspect_price_coverage
 
 
 def frame(timestamps, consumption=None):

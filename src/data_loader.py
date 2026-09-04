@@ -5,9 +5,9 @@ import os
 import time as sleep_time
 from datetime import datetime, date, time
 from zoneinfo import ZoneInfo
-from methods.config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, CACHE_FOLDER
-from methods.file_parser import ConsumptionDataParser
-from methods.logger import logger
+from src.config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, CACHE_FOLDER
+from src.file_parser import ConsumptionDataParser
+from src.logger import logger
 
 # --- Spot Price Data Handling ---
 

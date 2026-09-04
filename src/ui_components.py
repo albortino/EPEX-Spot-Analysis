@@ -6,12 +6,12 @@ import numpy as np
 import plotly.graph_objects as go
 import io
 
-from methods.i18n import t
-from methods.config import *
-from methods.tariffs import Tariff, TariffManager, TariffType
-from methods.utils import to_excel, get_intervals_per_day, get_aggregation_config, has_granular_resolution, get_min_max_date, DataQuality
-import methods.charts as charts
-from methods.logger import logger
+from src.i18n import t
+from src.config import *
+from src.tariffs import Tariff, TariffManager, TariffType
+from src.utils import to_excel, get_intervals_per_day, get_aggregation_config, has_granular_resolution, get_min_max_date, DataQuality
+import src.charts as charts
+from src.logger import logger
 
 # --- Introduction ---
 def render_intro():
@@ -231,7 +231,7 @@ def render_tariff_selection_header(df: pd.DataFrame, tariff_manager: TariffManag
             
             if compare_cheapest:
                 # Lazily import to avoid circular dependency
-                from methods.analysis import compare_all_tariffs
+                from src.analysis import compare_all_tariffs
                 final_flex_tariff, final_static_tariff = compare_all_tariffs(tariff_manager, df, country)
                 
                 col1, col2 = st.columns(2)
@@ -255,7 +255,7 @@ def render_tariff_selection_header(df: pd.DataFrame, tariff_manager: TariffManag
 def render_absence_days(df: pd.DataFrame, base_threshold: float, absence_threshold: float) -> pd.DataFrame:
     """Adds a sidebar option to remove days with very low consumption."""
     # Lazily import to avoid circular dependency
-    from methods.analysis import compute_absence_data
+    from src.analysis import compute_absence_data
 
     # --- Main Page Components ---
 
@@ -281,7 +281,7 @@ def render_absence_days(df: pd.DataFrame, base_threshold: float, absence_thresho
 def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: Tariff):
     """Displays the final tariff recommendation based on calculated savings."""
     logger.log("Rendering Recommendation")
-    from methods.analysis import compute_peak_timing_score
+    from src.analysis import compute_peak_timing_score
 
     is_granular = has_granular_resolution(df)
     if not is_granular:
@@ -314,7 +314,7 @@ def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     """Renders the interactive analysis of electricity spot prices."""
     logger.log("Rendering Price Analysis Tab")
     # Lazily import to avoid circular dependency
-    from methods.analysis import compute_price_distribution_data, compute_heatmap_data
+    from src.analysis import compute_price_distribution_data, compute_heatmap_data
     
     # Quartile Price Chart
     st.subheader(t("price_over_time_header"))
@@ -337,7 +337,7 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     """Renders the content for the 'Basic Dashboard' tab."""
     logger.log("Rendering Basic Dashboard Tab")
     # Lazily import to avoid circular dependency
-    from methods.analysis import compute_price_distribution_data, compute_cost_comparison_data, compute_consumption_quartiles, compute_usage_profile_data
+    from src.analysis import compute_price_distribution_data, compute_cost_comparison_data, compute_consumption_quartiles, compute_usage_profile_data
 
     # Consumption Summary Metrics
     total_kwh = df["consumption_kwh"].sum()
@@ -345,7 +345,7 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     avg_month_kwh = total_kwh / (days_count / 30.4375)
     est_year_kwh = total_kwh / (days_count / 365.25)
 
-    from methods.analysis import compute_peak_timing_score
+    from src.analysis import compute_peak_timing_score
     col1, col2, col3, col4, col5 = st.columns(5)
     days = max(int(round(days_count)), 1)
     col1.metric(t("days_metric"), f"{days:,}")
@@ -481,7 +481,7 @@ def _compute_col_vals(df: pd.DataFrame, is_granular: bool, func, func_name: str)
 def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
     """Renders the content for the 'Cost Comparison' tab."""
     # Lazily import to avoid circular dependency
-    from methods.analysis import compute_cost_comparison_data, compute_cumulative_savings_data
+    from src.analysis import compute_cost_comparison_data, compute_cumulative_savings_data
     
     logger.log("Rendering Cost Comparison Tab")
 
@@ -549,7 +549,7 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
     
     # --- Yearly Summary ---
     # Lazily import to avoid circular dependency
-    from methods.analysis import compute_yearly_summary
+    from src.analysis import compute_yearly_summary
 
     df_yearly = compute_yearly_summary(df)
     if not df_yearly.empty:
@@ -569,7 +569,7 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
 def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_threshold: float):
     """Renders the content for the 'Usage Patterns' tab."""
     # Lazily import to avoid circular dependency
-    from methods.analysis import (
+    from src.analysis import (
         compute_consumption_quartiles, compute_price_distribution_data,
         compute_consumption_trend_and_forecast, fit_forecast_model,
         compute_usage_profile_data, compute_example_day

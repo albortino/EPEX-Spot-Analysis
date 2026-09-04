@@ -3,8 +3,8 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Dict
-from methods.logger import logger
-from methods.utils import get_intervals_per_day
+from src.logger import logger
+from src.utils import get_intervals_per_day
 
 class TariffType(Enum):
     """Enum to represent the type of tariff."""
@@ -46,6 +46,7 @@ class TariffManager:
                         monthly_fee=item.get("monthly_fee_gross", 0.0),
                         link=item.get("link", ""),
                         price_kwh_pct=item.get("price_kwh_pct", 0.0)
+                        #last_updated is currently not used
                     ) for item in tariff_data
                 ]
                 

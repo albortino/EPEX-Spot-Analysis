@@ -2,7 +2,7 @@ import os
 import io
 import pytest
 
-from methods.file_parser import JavaScriptNetzbetreiberParser, ConsumptionDataParser
+from src.file_parser import JavaScriptNetzbetreiberParser, ConsumptionDataParser
 
 
 def test_javascript_parser_object_literal():

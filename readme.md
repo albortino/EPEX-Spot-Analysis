@@ -1,18 +1,18 @@
-# ⚡ Strompreis-Analyse Dashboard
+# ⚡ Strompreis-Analyse für Spot-Tarife ⚡
 
 Ein interaktives Streamlit-Dashboard zur datengestützten Analyse des eigenen Stromverbrauchs und zum präzisen Tarifvergleich.
 
-> **Kernziel des Projekts:**  
-> Analysiere anhand deines **tatsächlichen, historischen Verbrauchsverhaltens**, ob **dynamische/flexible Stromtarife (EPEX Spot)** für dich günstiger sind als **klassische statische Tarife (fester Arbeitspreis pro kWh)** – ganz ohne Schätzwerte oder Rätselraten.
+> **Kernziel des Projekts**  
+>_Wieviel Geld hätte ich gespart, wenn ich einen flexiblen Spot-Tarif anstatt eines fixen Tarifs gehabt hätte?_
 
----
+Analysiere anhand deines **tatsächlichen, historischen Verbrauchsverhaltens**, ob **dynamische/flexible Stromtarife (EPEX Spot)** für dich günstiger sind als **klassische statische Tarife (fester Arbeitspreis pro kWh)** – ganz ohne Schätzwerte oder Rätselraten. Annahme ist, dass sich die historischen Preise und Verbrauchswerte für die Zukunft **hinreichend gut** annähern werden. Um Trends besser abzubilden, gibt es eine machine learning prognose basierend auf [Prophet](https://github.com/facebook/prophet). 
 
-## 🚀 Live-Demo & Eigenbetrieb
+
+## Probiere es aus
 
 - **Online nutzen:** Das Dashboard wird öffentlich gehostet – du kannst direkt im Browser deine Verbrauchsdaten hochladen und sofort loslegen. Die Daten werden vom Server verarbeitet aber nicht gespeichert! *(Link folgt / hier einfügen)*
 - **Self-Hosting / Lokal ausführen:** Du möchtest vollständige Kontrolle haben oder es weiterentwickeln? Die Anwendung lässt sich mit wenigen Befehlen vollständig lokal auf deinem eigenen Rechner ausführen.
 
----
 
 ## Funktionen des Dashboards
 
@@ -32,7 +32,6 @@ Dieses Dashboard verschneidet deine historischen Smart-Meter-Messwerte (typische
 * **Datenexport:** Exportiere bereinigte Analysedaten und EPEX-Spotpreise als Excel-Datei (`.xlsx`) für eigene Auswertungen.
 * **Urlaubstage filtern:** Schließe Abwesenheitstage automatisch aus, um verzerrende Tage ohne Normalverbrauch herauszurechnen.
 
----
 
 ## Hinweise
 
@@ -40,14 +39,12 @@ Dieses Dashboard verschneidet deine historischen Smart-Meter-Messwerte (typische
 * **Berechnungsumfang sind reine Energiekosten:** Das Dashboard berechnet die reinen **Energiekosten** inklusive Anbieter-Aufschlägen und monatlichen Grundgebühren. Netzentgelte, Steuern, Abgaben und staatliche Umlagen variieren je nach Netzbetreiber/Region und sind in den Musterberechnungen standardmäßig nicht enthalten.
 * **Keine Anlage- oder Wechselberatung:** Die hinterlegten Tarife dienen als Orientierungs- und Vergleichskatalog. Bitte prüfe die tagesaktuellen Konditionen direkt beim jeweiligen Anbieter (oder dem Tarifkalkulator des E-Control (https://www.e-control.at/tarifkalkulator#/)) vor Vertragsschluss. Es gibt kein Sponsoring, weshalb volle Transparenz gewährleistet wird.
 
----
 
 ## Datenanforderungen
 
 * **Verbrauchs-CSV:** Eine CSV-Datei mit deinem historischen Stromverbrauch (z. B. aus dem Kundenportal deines Netzbetreibers oder Smart-Meter-Gateways). Ideal sind 15-Minuten- oder 1-Stunden-Werte. Das Tool erkennt gängige Netzbetreiber- und Anbieterformate automatisch.
 * **Börsenstrompreise:** Werden für das gewählte Land (z. B. Deutschland, Österreich) und den ausgewählten Zeitraum vollautomatisch über die aWATTar-API abgerufen und lokal gecacht.
 
----
 
 ## Lokale Installation
 
@@ -72,8 +69,7 @@ streamlit run app.py
 Die Anwendung öffnet sich automatisch unter `http://localhost:8501`.
 
 
-
-## 📁 Projektstruktur
+## Projektstruktur
 
 ```text
 ├── app.py                  # Streamlit-Haupteinstiegspunkt & UI-Orchestrierung
@@ -89,7 +85,6 @@ Die Anwendung öffnet sich automatisch unter `http://localhost:8501`.
 └── cache/                  # Lokaler Cache für abgerufene Preisdaten
 ```
 
----
 
 ## Danksagung
 

@@ -1,7 +1,7 @@
 import os
 import inspect
 from datetime import datetime
-from methods.config import DEBUG
+from src.config import DEBUG
 
 class Logger:
     _instance = None

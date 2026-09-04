@@ -3,11 +3,11 @@ import streamlit as st
 import numpy as np
 from prophet import Prophet
 
-from methods.utils import get_intervals_per_day, get_min_max_date, get_aggregation_config
-from methods.config import NEGLIGABLE_KWH, BASE_QUANTILE_THRESHOLD, PEAK_QUANTILE_THRESHOLD, STD_MULTIPLE, THRESHOLD_STABLE_TREND, TODAY_IS_MAX_DATE, LOCAL_TIMEZONE, FFT_BASE_HARMONICS, OVERNIGHT_HOURS, PEAK_SUSTAIN_INTERVALS
-from methods.tariffs import Tariff, TariffManager
-import methods.data_loader as data_loader
-from methods.logger import logger
+from src.utils import get_intervals_per_day, get_min_max_date, get_aggregation_config
+from src.config import NEGLIGABLE_KWH, BASE_QUANTILE_THRESHOLD, PEAK_QUANTILE_THRESHOLD, STD_MULTIPLE, THRESHOLD_STABLE_TREND, TODAY_IS_MAX_DATE, LOCAL_TIMEZONE, FFT_BASE_HARMONICS, OVERNIGHT_HOURS, PEAK_SUSTAIN_INTERVALS
+from src.tariffs import Tariff, TariffManager
+import src.data_loader as data_loader
+from src.logger import logger
 
 
 # --- Usage Classification ---

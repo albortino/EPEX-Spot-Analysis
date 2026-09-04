@@ -2,7 +2,7 @@ import pandas as pd
 import io
 from datetime import date
 import streamlit as st
-from methods.config import MIN_DATE, TODAY_IS_MAX_DATE
+from src.config import MIN_DATE, TODAY_IS_MAX_DATE
 from dataclasses import dataclass
 
 @st.cache_data
@@ -12,7 +12,8 @@ def to_excel(df: pd.DataFrame) -> bytes:
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         # Create a copy to avoid modifying the cached dataframe in place
         df_temp = df.copy()
-        df_temp["timestamp"] = df_temp["timestamp"].dt.tz_localize(None)
+        if "timestamp" in df_temp.columns and hasattr(df_temp["timestamp"].dt, "tz") and df_temp["timestamp"].dt.tz is not None:
+            df_temp["timestamp"] = df_temp["timestamp"].dt.tz_localize(None)
         df_temp.to_excel(writer, index=False, sheet_name="AnalysisData")
     processed_data = output.getvalue()
     return processed_data

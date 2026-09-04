@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing! This document provides instructions for setting up your local environment, understanding the project architecture, adding new smart meter formats, and submitting contributions.
 
----
+Coding-agents are highly welcome!
 
 ## 1. Development Setup
 
@@ -30,7 +30,6 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
----
 
 ## 2. Architecture Overview
 
@@ -45,7 +44,6 @@ The codebase is designed around a modular structure:
   - `data_loader.py`: Fetches and caches EPEX spot market price data from the aWATTar API.
   - `file_parser.py`: Auto-detects and parses various European smart meter CSV exports into standardized UTC time series.
 
----
 
 ## 3. Adding Support for a New Smart Meter Format
 
@@ -74,7 +72,6 @@ If your regional network operator (Netzbetreiber) exports a CSV format that is n
 3. Add a test case in `tests/test_file_parser.py`.
 4. Run `pytest` to confirm your format parses cleanly.
 
----
 
 ## 4. Testing & Code Quality
 
@@ -88,7 +85,6 @@ PYTHONPATH=. pytest tests/
 flake8 methods/ tests/ app.py --count --select=E9,F63,F7,F82 --show-source
 ```
 
----
 
 ## 5. Pull Request Guidelines
 

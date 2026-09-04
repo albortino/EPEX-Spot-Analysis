@@ -1,57 +1,72 @@
 [
   {
-    "name": "disk.strom (disk.energy)",
-    "link": "https://www.disk.energy/produkte",
-    "price_kwh_gross": 0.1308,
-    "monthly_fee_gross": 2.00
-  },
-  {
-    "name": "V Strom Classic (Verbund",
-    "link": "https://www.verbund.com/de/privat/strom/verbund-strom",
-    "price_kwh_gross": 0.1884,
-    "monthly_fee_gross": 4.79
-  },
-  {
-    "name": "Max Basic Strom (MAXENERGY)",
-    "link": "https://www.maxenergy.at/tarifuebersicht.html?/tariff_type=electricity",
-    "price_kwh_gross": 0.156,
-    "monthly_fee_gross": 6.00
-  },
-  {
-    "name": "AAE Natur Pur 25.8",
-    "link": "https://aae.at/blog/stromtarif/natur-pur-25-8/",
-    "price_kwh_gross": 0.0966,
-    "monthly_fee_gross": 6.00
+    "name": "V-Strom CLASSIC (VERBUND)",
+    "link": "https://www.verbund.com/de-at/privatkunden/strom",
+    "price_kwh_gross": 0.1500,
+    "monthly_fee_gross": 4.79,
+    "last_updated": "2026-09-04"
   },
   {
     "name": "OPTIMA Entspannt plus (Wien Energie)",
-    "link": "https://www.wienenergie.at/privat/produkte/strom/optima-entspannt-plus/?options=SOPTB_0002-okopure-none",
-    "price_kwh_gross": 0.158029,
-    "monthly_fee_gross": 6.13155833
+    "link": "https://www.wienenergie.at/privat/produkte/strom/optima-entspannt-plus/",
+    "price_kwh_gross": 0.1494,
+    "monthly_fee_gross": 5.92,
+    "last_updated": "2026-09-04"
   },
   {
-    "name": "voltino privat 24 (Wels Strom GmbH)",
-    "link": "https://www.voltino-gastino.at/preise",
-    "price_kwh_gross": 0.2028,
-    "monthly_fee_gross": 5.88
-  },
-
-  {
-    "name": "oeko Fair (oekostrom)",
-    "link": "https://oekostrom.at/strom/",
-    "price_kwh_gross": 0.1848,
-    "monthly_fee_gross": 4.9917
+    "name": "Feel Good Energie für Alle  (Energie AG)",
+    "link": "https://www.energieag.at/privat/strom/uebersicht#anchor-section-19180",
+    "price_kwh_gross": 0.12,
+    "monthly_fee_gross": 5.28,
+    "last_updated": "2026-09-04"
   },
   {
-    "name": "Pullstrom Classic S (pullstrom)",
-    "link": "https://www.pullstrom.at/#tarife",
+    "name": "Optima Garant Strom (EVN)",
+    "link": "https://www.evn.at/home/strom",
+    "price_kwh_gross": 0.222,
+    "monthly_fee_gross": 7.2,
+    "last_updated": "2026-09-04"
+  },
+  {
+    "name": "HOFER GRÜNSTROM FIX",
+    "link": "https://www.hofer-gruenstrom.at/",
+    "price_kwh_gross": 0.1259,
+    "monthly_fee_gross": 4.95,
+    "last_updated": "2026-09-04"
+  },
+  {
+    "name": "disk.strom (disk.energy)",
+    "link": "https://www.disk.energy/produkte",
     "price_kwh_gross": 0.1728,
-    "monthly_fee_gross": 4.90
+    "monthly_fee_gross": 2.00,
+    "last_updated": "2026-09-04"
   },
   {
-    "name": "E.ON Ökostrom Basis (E.ON Energie Österreich)",
-    "link": "https://www.eon-energie.at/at/strom/stromtarif.html",
-    "price_kwh_gross": 0.282,
-    "monthly_fee_gross": 5.40
+    "name": "Kelag Strom Energiezukunft (KELAG)",
+    "link": "https://www.kelag.at/privatkunden/strom.htm",
+    "price_kwh_gross": 0.14860,
+    "monthly_fee_gross": 5.4,
+    "last_updated": "2026-09-04"
+  },
+  {
+    "name": "oeko FIX (oekostrom AG)",
+    "link": "https://oekostrom.at/strom/",
+    "price_kwh_gross": 0.1656,
+    "monthly_fee_gross": 6.00,
+    "last_updated": "2026-09-04"
+  },
+  {
+    "name": "Max Basic Strom Heimat (MAXENERGY)",
+    "link": "https://www.maxenergy.at/tarifuebersicht.html",
+    "price_kwh_gross": 0.18,
+    "monthly_fee_gross": 6.00,
+    "last_updated": "2026-09-04"
+  },
+  {
+    "name": "voltino privat fix 26 (Wels Strom GmbH)",
+    "link": "https://www.voltino-gastino.at/preise",
+    "price_kwh_gross": 0.1908,
+    "monthly_fee_gross": 5.88,
+    "last_updated": "2026-09-04"
   }
 ]

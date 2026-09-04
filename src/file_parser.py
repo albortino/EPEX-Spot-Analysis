@@ -7,9 +7,9 @@ import json
 import pytz
 from typing import List, Optional
 from dataclasses import dataclass, asdict
-from methods.config import LOCAL_TIMEZONE, CACHE_FOLDER
-from methods.utils import get_intervals_per_day
-from methods.logger import logger
+from src.config import LOCAL_TIMEZONE, CACHE_FOLDER
+from src.utils import get_intervals_per_day
+from src.logger import logger
 
 @dataclass
 class ProviderFormat:

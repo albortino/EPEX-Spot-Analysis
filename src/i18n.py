@@ -1,6 +1,6 @@
 import streamlit as st
 import json
-from methods.logger import logger
+from src.logger import logger
 
 # --- Internationalization (i18n) ---
 

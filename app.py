@@ -1,11 +1,11 @@
 import streamlit as st
-import methods.config as config
-import methods.data_loader as data_loader
-import methods.analysis as analysis
-import methods.ui_components as ui_components
-from methods.tariffs import TariffManager
-from methods.logger import logger
-from methods.utils import filter_dataframe, filter_by_quarter, inspect_consumption, inspect_price_coverage
+import src.config as config
+import src.data_loader as data_loader
+import src.analysis as analysis
+import src.ui_components as ui_components
+from src.tariffs import TariffManager
+from src.logger import logger
+from src.utils import filter_dataframe, filter_by_quarter, inspect_consumption, inspect_price_coverage
 
 
 # --- Page and App Configuration ---

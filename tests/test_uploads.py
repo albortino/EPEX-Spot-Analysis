@@ -1,7 +1,7 @@
 import os
 import glob
 import pytest
-from methods.file_parser import ConsumptionDataParser
+from src.file_parser import ConsumptionDataParser
 
 
 @pytest.fixture(scope="module")
