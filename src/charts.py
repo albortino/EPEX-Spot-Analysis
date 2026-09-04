@@ -34,7 +34,13 @@ def get_price_chart(df: pd.DataFrame, static_price: float) -> go.Figure:
     fig.add_trace(go.Scatter(x=df.index, y=df["Spot Price Q1"], mode="lines", line=dict(dash="dot", color=FLEX_COLOR_LIGHT), name=t("spot_price_q1_trace")))
 
     # Static Price
-    fig.add_hline(y=static_price, line=dict(color=STATIC_COLOR, width=2), name=t("static_tariff_trace"))
+    fig.add_trace(go.Scatter(
+        x=list(df.index),
+        y=[static_price] * len(df.index),
+        mode="lines",
+        line=dict(color=STATIC_COLOR, width=2),
+        name=t("static_plan_title")
+    ))
 
     fig.update_layout(xaxis_title=df.index.name, yaxis_title=t("spot_price_kwh_y_axis"), legend_title_text=t("legend_metrics"), hovermode="x unified")
 
@@ -375,8 +381,11 @@ def get_avg_price_chart(df_summary: pd.DataFrame, is_granular: bool) -> go.Figur
                                  line=dict(color=STATIC_COLOR)))
 
     fig.update_layout(
+        xaxis_title=t("col_period"),
         yaxis_title=t("avg_price_per_kwh_header").split(" (")[0], # Get base label
-        legend=dict(orientation="v", yanchor="top", y=1, xanchor="right", x=1)
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        height=420,
+        margin=dict(l=40, r=20, t=50, b=40)
     )
     return fig
 
@@ -401,9 +410,11 @@ def get_total_cost_chart(df_summary: pd.DataFrame, is_granular: bool) -> go.Figu
                                  line=dict(color=STATIC_COLOR)))
 
     fig.update_layout(
-        xaxis_title="Period",
-        yaxis_title="Total Cost (€)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        xaxis_title=t("col_period"),
+        yaxis_title=t("total_costs_per_period"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        height=420,
+        margin=dict(l=40, r=20, t=50, b=40)
     )
     return fig
 

@@ -1,9 +1,11 @@
 # ⚡ Strompreis-Analyse für Spot-Tarife ⚡
 
-Ein interaktives Streamlit-Dashboard zur datengestützten Analyse des eigenen Stromverbrauchs und zum präzisen Tarifvergleich.
+Ein interaktives Streamlit-Dashboard zur datengestützten Analyse des eigenen Stromverbrauchs und zum nachvollziehbaren und transparenten Tarifvergleich.
 
 > **Kernziel des Projekts**  
->_Wieviel Geld hätte ich gespart, wenn ich einen flexiblen Spot-Tarif anstatt eines fixen Tarifs gehabt hätte?_
+>_Wieviel Geld hätte ich gespart, wenn ich einen flexiblen Tarif anstatt eines fixen Tarifs gehabt hätte?_
+
+Zielgruppe: All jene, die über einen **Wechsel zu einem Spot Preis Tarif oder zeitvariablen Tarif nachdenken**. Die meisten Anbieter von Spot Preis Tarifen werben damit, dass man durch ein bewusstes Konsumverhalten Geld sparen kann. Um dies beurteilen zu können, bedarf es eines Werkzeugs, das hilft das **eigene Verbrauchsverhalten besser zu verstehen** und das Potenzial eines Spot oder zeitvariablen Tarifs einschätzen zu können.
 
 Analysiere anhand deines **tatsächlichen, historischen Verbrauchsverhaltens**, ob **dynamische/flexible Stromtarife (EPEX Spot)** für dich günstiger sind als **klassische statische Tarife (fester Arbeitspreis pro kWh)** – ganz ohne Schätzwerte oder Rätselraten. Hierbei werden folgende Annahmen getroffen:
 - Die historischen Preise und Verbrauchswerte lassen sich für die Zukunft **hinreichend gut** annähern.

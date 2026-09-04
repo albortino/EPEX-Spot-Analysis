@@ -113,20 +113,52 @@ def _render_tariff_selection_widgets(_tariff_manager: TariffManager, expanded: b
     col1, col2, col3 = st.columns(3)
     final_tariffs = {}
 
+    def _on_spot_change():
+        sel = st.session_state[f"{key_prefix}_select_spot"]
+        t_obj = spot_options[sel]
+        st.session_state[f"{key_prefix}_spot_price"] = t_obj.price_kwh
+        st.session_state[f"{key_prefix}_spot_pct"] = t_obj.price_kwh_pct
+        st.session_state[f"{key_prefix}_spot_fee"] = t_obj.monthly_fee
+
+    def _on_var_change():
+        sel = st.session_state[f"{key_prefix}_select_var"]
+        t_obj = var_options[sel]
+        st.session_state[f"{key_prefix}_var_summer_sun"] = t_obj.summer_sun_price if t_obj.summer_sun_price is not None else 0.05
+        st.session_state[f"{key_prefix}_var_winter_sun"] = t_obj.winter_sun_price
+        st.session_state[f"{key_prefix}_var_summer_regular"] = t_obj.summer_regular_price
+        st.session_state[f"{key_prefix}_var_winter_regular"] = t_obj.winter_regular_price
+        st.session_state[f"{key_prefix}_var_fee"] = t_obj.monthly_fee
+
+    def _on_fixed_change():
+        sel = st.session_state[f"{key_prefix}_select_fixed"]
+        t_obj = fixed_options[sel]
+        st.session_state[f"{key_prefix}_fixed_price"] = t_obj.price_kwh
+        st.session_state[f"{key_prefix}_fixed_fee"] = t_obj.monthly_fee
+
     # 1. Spot Tariff Selector
     with col1:
         with st.expander(t("flexible_plan_title"), expanded=expanded):
             spot_options = _tariff_manager.get_flex_tariffs_with_custom()
+            select_key = f"{key_prefix}_select_spot"
+            # Initialize default widget states if not set
+            default_spot = list(spot_options.keys())[-1]
+            if select_key not in st.session_state:
+                st.session_state[select_key] = default_spot
+                t_init = spot_options[default_spot]
+                st.session_state[f"{key_prefix}_spot_price"] = t_init.price_kwh
+                st.session_state[f"{key_prefix}_spot_pct"] = t_init.price_kwh_pct
+                st.session_state[f"{key_prefix}_spot_fee"] = t_init.monthly_fee
+
             selected_name = st.selectbox(
                 t("select_tariff_type", tariff_type=t("flexible_plan_title")),
                 options=list(spot_options.keys()),
-                index=len(spot_options) - 1,
-                key=f"{key_prefix}_select_spot"
+                key=select_key,
+                on_change=_on_spot_change
             )
             selected_tariff = spot_options[selected_name]
-            price_kwh = st.number_input(t("on_top_price"), value=selected_tariff.price_kwh, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_spot_price")
-            price_kwh_pct = st.number_input(t("variable_price_pct"), value=selected_tariff.price_kwh_pct, min_value=0.0, max_value=100.0, step=1.0, format="%.1f", key=f"{key_prefix}_spot_pct")
-            monthly_fee = st.number_input(t("monthly_fee"), value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{key_prefix}_spot_fee")
+            price_kwh = st.number_input(t("on_top_price"), min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_spot_price")
+            price_kwh_pct = st.number_input(t("variable_price_pct"), min_value=0.0, max_value=100.0, step=1.0, format="%.1f", key=f"{key_prefix}_spot_pct")
+            monthly_fee = st.number_input(t("monthly_fee"), min_value=0.0, step=1.0, format="%.2f", key=f"{key_prefix}_spot_fee")
             usage_tax = st.checkbox(t("include_usage_fee"), value=False, key=f"{key_prefix}_spot_usage_tax")
             final_tariffs["spot"] = SpotTariff(
                 name=selected_name,
@@ -141,22 +173,36 @@ def _render_tariff_selection_widgets(_tariff_manager: TariffManager, expanded: b
     with col2:
         with st.expander(t("variable_plan_title"), expanded=expanded):
             var_options = _tariff_manager.get_variable_tariffs_with_custom()
+            select_key = f"{key_prefix}_select_var"
+            default_var = list(var_options.keys())[-1]
+            if select_key not in st.session_state:
+                st.session_state[select_key] = default_var
+                t_init = var_options[default_var]
+                st.session_state[f"{key_prefix}_var_summer_sun"] = t_init.summer_sun_price if t_init.summer_sun_price is not None else 0.05
+                st.session_state[f"{key_prefix}_var_winter_sun"] = t_init.winter_sun_price
+                st.session_state[f"{key_prefix}_var_summer_regular"] = t_init.summer_regular_price
+                st.session_state[f"{key_prefix}_var_winter_regular"] = t_init.winter_regular_price
+                st.session_state[f"{key_prefix}_var_fee"] = t_init.monthly_fee
+
             selected_name = st.selectbox(
                 t("select_tariff_type", tariff_type=t("variable_plan_title")),
                 options=list(var_options.keys()),
-                index=len(var_options) - 1,
-                key=f"{key_prefix}_select_var"
+                key=select_key,
+                on_change=_on_var_change
             )
             selected_tariff = var_options[selected_name]
-            summer_sun_price = st.number_input(t("summer_sun_price"), value=selected_tariff.summer_sun_price if selected_tariff.summer_sun_price is not None else 0.05, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_var_summer_sun")
-            has_winter_sun = st.checkbox("WinterSonne (10-16h)", value=(selected_tariff.winter_sun_price is not None), key=f"{key_prefix}_var_has_winter_sun")
-            winter_sun_price = None
-            if has_winter_sun:
-                default_w = selected_tariff.winter_sun_price if selected_tariff.winter_sun_price is not None else 0.10
-                winter_sun_price = st.number_input(t("winter_sun_price"), value=default_w, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_var_winter_sun")
-            summer_regular_price = st.number_input(t("summer_regular_price"), value=selected_tariff.summer_regular_price, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_var_summer_regular")
-            winter_regular_price = st.number_input(t("winter_regular_price"), value=selected_tariff.winter_regular_price, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_var_winter_regular")
-            monthly_fee = st.number_input(t("monthly_fee"), value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{key_prefix}_var_fee")
+            summer_sun_price = st.number_input(t("summer_sun_price"), min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_var_summer_sun")
+            winter_sun_price = st.number_input(
+                t("winter_sun_price"),
+                min_value=0.0,
+                step=0.001,
+                format="%.4f",
+                placeholder="–",
+                key=f"{key_prefix}_var_winter_sun"
+            )
+            summer_regular_price = st.number_input(t("summer_regular_price"), min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_var_summer_regular")
+            winter_regular_price = st.number_input(t("winter_regular_price"), min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_var_winter_regular")
+            monthly_fee = st.number_input(t("monthly_fee"), min_value=0.0, step=1.0, format="%.2f", key=f"{key_prefix}_var_fee")
             usage_tax = st.checkbox(t("include_usage_fee"), value=False, key=f"{key_prefix}_var_usage_tax")
             final_tariffs["variable"] = TimeVariableTariff(
                 name=selected_name,
@@ -173,15 +219,23 @@ def _render_tariff_selection_widgets(_tariff_manager: TariffManager, expanded: b
     with col3:
         with st.expander(t("static_plan_title"), expanded=expanded):
             fixed_options = _tariff_manager.get_static_tariffs_with_custom()
+            select_key = f"{key_prefix}_select_fixed"
+            default_fixed = list(fixed_options.keys())[-1]
+            if select_key not in st.session_state:
+                st.session_state[select_key] = default_fixed
+                t_init = fixed_options[default_fixed]
+                st.session_state[f"{key_prefix}_fixed_price"] = t_init.price_kwh
+                st.session_state[f"{key_prefix}_fixed_fee"] = t_init.monthly_fee
+
             selected_name = st.selectbox(
                 t("select_tariff_type", tariff_type=t("static_plan_title")),
                 options=list(fixed_options.keys()),
-                index=len(fixed_options) - 1,
-                key=f"{key_prefix}_select_fixed"
+                key=select_key,
+                on_change=_on_fixed_change
             )
             selected_tariff = fixed_options[selected_name]
-            price_kwh = st.number_input(t("price_per_kwh"), value=selected_tariff.price_kwh, min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_fixed_price")
-            monthly_fee = st.number_input(t("monthly_fee"), value=selected_tariff.monthly_fee, min_value=0.0, step=1.0, format="%.2f", key=f"{key_prefix}_fixed_fee")
+            price_kwh = st.number_input(t("price_per_kwh"), min_value=0.0, step=0.001, format="%.4f", key=f"{key_prefix}_fixed_price")
+            monthly_fee = st.number_input(t("monthly_fee"), min_value=0.0, step=1.0, format="%.2f", key=f"{key_prefix}_fixed_fee")
             usage_tax = st.checkbox(t("include_usage_fee"), value=False, key=f"{key_prefix}_fixed_usage_tax")
             final_tariffs["fixed"] = FixedTariff(
                 name=selected_name,
@@ -466,10 +520,8 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     if is_granular:
         st.subheader(t("avg_price_per_kwh_header"))
         st.markdown(t("avg_price_per_kwh_markdown"))
-        df_summary = compute_cost_comparison_data(df, "Monthly") # Always use monthly for this overview chart
+        df_summary = compute_cost_comparison_data(df, resolution)
         if not df_summary.empty:
-            df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
-            df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
             avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular)
             st.plotly_chart(avg_price_fig, config={"width": "stretch"}, key="basic_avg_price_chart")
 
@@ -619,7 +671,7 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
         if is_granular:
             col1, col2 = st.columns(2)
             with col1:
-                st.subheader(t("total_costs_per_period_header"))
+                st.subheader(t("total_costs_per_period"))
                 st.markdown(t("total_costs_per_period_markdown"))
                 total_cost_fig = charts.get_total_cost_chart(df_summary, is_granular)
                 st.plotly_chart(total_cost_fig, config={"width": "stretch"})
@@ -631,7 +683,7 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
                 avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular)
                 st.plotly_chart(avg_price_fig, config={"width": "stretch"})
         else:
-            st.subheader(t("total_costs_per_period_header"))
+            st.subheader(t("total_costs_per_period"))
             st.markdown(t("total_costs_per_period_markdown"))
             total_cost_fig = charts.get_total_cost_chart(df_summary, is_granular)
             st.plotly_chart(total_cost_fig, config={"width": "stretch"})

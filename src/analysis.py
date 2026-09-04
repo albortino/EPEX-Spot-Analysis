@@ -336,7 +336,7 @@ def compute_heatmap_data(df: pd.DataFrame) -> pd.DataFrame:
 def compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataFrame:
     """Computes and caches aggregated cost data for comparison."""
     logger.log("Computing Cost Comparison Data")
-    freq_map = {"Daily": "D", "Weekly": "W-MON", "Monthly": "ME"}
+    freq_map = {"Hourly": "h", "Daily": "D", "Weekly": "W-MON", "Monthly": "ME"}
     grouper = pd.Grouper(key="timestamp", freq=freq_map[resolution])
 
     summary_agg_dict: dict = {
@@ -355,7 +355,8 @@ def compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataFr
         df_summary["Difference (€)"] = df_summary[cost_cols_summary].max(axis=1) - df_summary[cost_cols_summary].min(axis=1)
     else:
         df_summary["Difference (€)"] = 0.0
-    df_summary["Period"] = df_summary["timestamp"].dt.strftime("%Y-%m-%d" if resolution == "Daily" else "%G-W%V" if resolution == "Weekly" else "%Y-%m")
+    period_format = "%Y-%m-%d %H:%M" if resolution == "Hourly" else "%Y-%m-%d" if resolution == "Daily" else "%G-W%V" if resolution == "Weekly" else "%Y-%m"
+    df_summary["Period"] = df_summary["timestamp"].dt.strftime(period_format)
 
     # Calculate average prices
     df_summary["Avg. Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
