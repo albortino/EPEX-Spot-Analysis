@@ -193,6 +193,72 @@ def _render_tariff_selection_widgets(_tariff_manager: TariffManager, expanded: b
 
     return final_tariffs["spot"], final_tariffs["variable"], final_tariffs["fixed"]
 
+def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, str, date, date, str, float]:
+    """Renders all sidebar inputs and returns the configuration values."""
+    logger.log("Rendering Sidebar")
+    with st.sidebar:
+        st.header(t("configuration"))
+
+        # Mode Selection
+        is_expert_mode = st.toggle(
+            "Expert Mode",
+            value=False,
+            help="Enable for in-depth analysis and more configuration options."
+        )
+        mode = "Expert" if is_expert_mode else "Basic"
+        
+        # 1. Country Selection for EPEX
+        country_select = {"Austria": "at", "Germany": "de"}
+        
+        with st.expander(t("select_country"), expanded=False):
+            selected_country = st.selectbox(label=t("select_country_label"), options=country_select.keys(), index=0)
+            awattar_country = country_select[selected_country]
+
+        # 2. Analysis Period Selection (with Reset button)
+        with st.expander(t("select_analysis_period"), expanded=True):
+            min_date, max_date = get_min_max_date(df, today_as_max=TODAY_IS_MAX_DATE)
+            
+            if st.button(t("reset_to_default")):
+                st.session_state.date_range_selector = (min_date, max_date)
+                st.rerun()
+
+            curr_range = st.session_state.get("date_range_selector")
+            if isinstance(curr_range, (tuple, list)) and len(curr_range) == 2:
+                if curr_range[0] < min_date or curr_range[1] > max_date or curr_range[0] > max_date:
+                    st.session_state.date_range_selector = (min_date, max_date)
+
+            selected_range = st.date_input(
+                t("date_input_label"),
+                value=(min_date, max_date),
+                min_value=min_date,
+                max_value=max_date,
+                format="DD.MM.YYYY",
+                key="date_range_selector",
+                label_visibility="collapsed"
+            )
+
+            # Quarter selection
+            quarter_options = ["All", "Q1", "Q2", "Q3", "Q4"]
+            selected_quarter = st.selectbox(
+                t("select_quarter_label"),
+                options=quarter_options,
+                index=0,
+                key="quarter_selector"
+            )
+
+        # Split into start and end dates
+        if isinstance(selected_range, tuple) and len(selected_range) == 2:
+            start_date, end_date = selected_range
+        else:
+            start_date, end_date = selected_range[0], max_date
+        
+        # 4. Load Shifting Simulation
+        with st.expander(t("simulate_consumption_shifting"), expanded=False):
+            st.markdown(t("simulate_shifting_markdown"), help=t("simulate_shifting_help"))
+            shift_percentage = st.slider(t("shift_peak_load_slider"), min_value=0, max_value=100, value=0, step=5)
+
+        return mode, awattar_country, start_date, end_date, selected_quarter, shift_percentage
+
 def render_tariff_selection_header(df: pd.DataFrame, tariff_manager: TariffManager, country: str, key_prefix: str = "") -> tuple[Tariff, Tariff, Tariff]:
     """Renders the main tariff selection UI on the main page."""
     with st.expander(t("select_tariff_plan"), expanded=True):
