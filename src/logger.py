@@ -33,14 +33,14 @@ class Logger:
         Severity 1: Console and file (for important events like API calls, file parsing).
         """
         now = datetime.now().strftime(self.date_format)
-        
+
         # Get the filename of the caller for context
         try:
             caller_filename = os.path.basename(inspect.stack()[1].filename)
             log_prefix = f"{now} [{caller_filename}]"
         except (IndexError, AttributeError):
             log_prefix = f"{now}"
-        
+
         log_message = f"{log_prefix}: {message}"
         print(log_message)
 
@@ -53,4 +53,3 @@ class Logger:
 
 # Singleton instance to be imported and used across the application
 logger = Logger(debug=DEBUG)
-

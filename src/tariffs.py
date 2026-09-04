@@ -218,7 +218,7 @@ class TariffManager:
                         name=item.get("name", "Unnamed"),
                         summer_sun_price=item.get("summer_sun_price_gross"),
                         winter_sun_price=item.get("winter_sun_price_gross"),
-                        summer_regular_price=item.get("summer_regular_price_gross", item.get("winter_regular_price_gross", 0.0)),
+                        summer_regular_price=item.get("summer_regular_price_gross", 0.0),
                         winter_regular_price=item.get("winter_regular_price_gross", 0.0),
                         monthly_fee=item.get("monthly_fee_gross", 0.0),
                         link=item.get("link", ""),

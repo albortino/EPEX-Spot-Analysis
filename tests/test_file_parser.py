@@ -155,4 +155,3 @@ def test_parse_at_format_daily(parser):
     assert df["timestamp"].dt.tz is not None
     assert (df["consumption_kwh"] >= 0).all()
     assert len(df) >= 200
-

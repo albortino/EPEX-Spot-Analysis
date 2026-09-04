@@ -12,7 +12,7 @@ AWATTAR_COUNTRY = "at"  # or "de"
 
 # --- UI Color Scheme ---
 FLEX_COLOR = "#f96407"
-FLEX_COLOR_LIGHT = "#f29f6c" 
+FLEX_COLOR_LIGHT = "#f29f6c"
 FLEX_COLOR_SHADE = "rgba(249, 100, 7, 0.08)"
 VARIABLE_COLOR = "#F39C12"
 STATIC_COLOR = "#989898"
@@ -57,4 +57,3 @@ OVERNIGHT_HOURS = (1, 5)
 # Minimum consecutive intervals a residual must exceed the peak amplitude for sustained pea
 # 1 = a single 15-min interval suffices (catches kettles, short bursts)
 PEAK_SUSTAIN_INTERVALS = 1
-

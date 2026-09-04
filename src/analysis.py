@@ -178,7 +178,7 @@ def simulate_peak_shifting(df: pd.DataFrame, shift_percentage: float, window_hou
 
     peaks = df_sim[df_sim["peak_load_kwh"] > 0.001].copy()
     if peaks.empty: return df_sim
-    
+
     peaks["peak_cost"] = peaks["peak_load_kwh"] * peaks["spot_price_eur_kwh"]
     sorted_peaks = peaks.sort_values(by="peak_cost", ascending=False)
 
@@ -186,7 +186,7 @@ def simulate_peak_shifting(df: pd.DataFrame, shift_percentage: float, window_hou
 
     for peak_idx, peak_row in sorted_peaks.iterrows():
         if kwh_to_shift_total <= 0: break
-        
+
         current_timestamp = peak_row["timestamp"]
         window_df = df_sim[
             (df_sim["timestamp"] >= current_timestamp - pd.Timedelta(hours=window_hours)) &
@@ -194,21 +194,21 @@ def simulate_peak_shifting(df: pd.DataFrame, shift_percentage: float, window_hou
         ].copy()
         window_df = window_df[window_df.index != peak_idx]
         if window_df.empty: continue
-        
+
         cheapest_hour_in_window = window_df.loc[window_df["spot_price_eur_kwh"].idxmin()]
-        
+
         if cheapest_hour_in_window["spot_price_eur_kwh"] < peak_row["spot_price_eur_kwh"]:
             kwh_in_this_peak = df_sim.at[peak_idx, "peak_load_kwh"]
             receiving_capacity = peak_row["peak_load_kwh"]
             kwh_to_shift_now = min(kwh_in_this_peak, kwh_to_shift_total, receiving_capacity)
-            
+
             df_sim.at[peak_idx, "peak_load_kwh"] -= kwh_to_shift_now
             shifted_load_additions.loc[cheapest_hour_in_window.name] += kwh_to_shift_now
             kwh_to_shift_total -= kwh_to_shift_now
 
     df_sim["regular_load_kwh"] += shifted_load_additions
     df_sim["consumption_kwh"] = df_sim["base_load_kwh"] + df_sim["regular_load_kwh"] + df_sim["peak_load_kwh"]
-    
+
     return df_sim
 
 # --- Data Computation for UI Components ---
@@ -217,12 +217,12 @@ def simulate_peak_shifting(df: pd.DataFrame, shift_percentage: float, window_hou
 def compare_all_tariffs(_tariff_manager: TariffManager, df_consumption: pd.DataFrame, country: str) -> tuple[Tariff | None, Tariff | None, Tariff | None]:
     """Finds the cheapest spot, time-variable, and fixed tariffs from the predefined lists."""
     logger.log("Calculating cheapest tariff comparison")
-    
+
     flex_options = _tariff_manager.get_flex_tariffs_with_custom()
     variable_options = _tariff_manager.get_variable_tariffs_with_custom()
     static_options = _tariff_manager.get_static_tariffs_with_custom()
     total_costs = {}
-    
+
     # Calculate total costs for all non-custom tariffs.
     # First, ensure we have spot price data for flexible tariff calculations.
     df = df_consumption.copy()
@@ -238,11 +238,11 @@ def compare_all_tariffs(_tariff_manager: TariffManager, df_consumption: pd.DataF
     for name, tariff in variable_options.items():
         if name == "Custom": continue
         total_costs[("variable", name)] = tariff.calculate_cost(df).sum()
-    
+
     for name, tariff in static_options.items():
         if name == "Custom": continue
         total_costs[("static", name)] = tariff.calculate_cost(df).sum()
-    
+
     # Identify the cheapest tariffs based on the calculated costs robustly
     final_flex_tariff = None
     flex_keys = [k for k in total_costs if k[0] == "flex"]
@@ -261,7 +261,7 @@ def compare_all_tariffs(_tariff_manager: TariffManager, df_consumption: pd.DataF
     if static_keys:
         cheapest_static_key = min(static_keys, key=total_costs.get) #type: ignore
         final_static_tariff = static_options.get(cheapest_static_key[1])
-    
+
     return final_flex_tariff, final_variable_tariff, final_static_tariff
 
 @st.cache_data(ttl=3600)
@@ -288,7 +288,7 @@ def compute_price_distribution_data(df: pd.DataFrame, resolution: str) -> pd.Dat
             ("q3", lambda x: x.quantile(0.75))
         ]
     }
-    
+
     df_valid = df.dropna(subset=["spot_price_eur_kwh"]).copy()
     if df_valid.empty:
         return pd.DataFrame(columns=["Spot Price Q1", "Spot Price Median", "Spot Price Mean", "Spot Price Q3"])
@@ -349,7 +349,7 @@ def compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataFr
 
     df_summary = df.groupby(grouper).agg(**summary_agg_dict).reset_index()
     df_summary = df_summary[df_summary["Total Consumption"] > 0.01] # Filter out empty periods
-    
+
     cost_cols_summary = [c for c in ["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"] if c in df_summary.columns]
     if len(cost_cols_summary) >= 2:
         df_summary["Difference (€)"] = df_summary[cost_cols_summary].max(axis=1) - df_summary[cost_cols_summary].min(axis=1)
@@ -373,7 +373,7 @@ def compute_cumulative_savings_data(df: pd.DataFrame) -> pd.DataFrame:
     logger.log("Computing Cumulative Savings Data")
     cost_cols = [c for c in ["total_cost_flexible", "total_cost_variable", "total_cost_static"] if c in df.columns]
     df_savings = df[["timestamp"] + cost_cols].copy().sort_values("timestamp")
-    
+
     if len(cost_cols) >= 2:
         totals = {c: df[c].sum() for c in cost_cols}
         cheapest_col = min(totals, key=totals.get)
@@ -430,19 +430,19 @@ def compute_consumption_quartiles(df: pd.DataFrame, intervals_per_day: int, reso
         df_agg = df_agg.set_index('timestamp').resample('h').agg({
             'consumption_kwh': 'sum'
         }).reset_index()
-    
+
     consumption_agg_dict = { "consumption_kwh": [ ("q1", lambda x: x.quantile(0.25)), ("median", "median"), ("q3", lambda x: x.quantile(0.75)) ] }
     if intervals_per_day <= 1 and resolution == "Hourly":
         resolution = "Monthly"
-    
+
     config = get_aggregation_config(df_agg, resolution)
     df_consumption_quartiles = df_agg.dropna(subset=["consumption_kwh"]).groupby(config["grouper"]).agg(consumption_agg_dict)
     df_consumption_quartiles.columns = ["Consumption Q1", "Consumption Median", "Consumption Q3"]
 
-    df_consumption_quartiles.index.name = config["name"]        
+    df_consumption_quartiles.index.name = config["name"]
     df_consumption_quartiles.index = df_consumption_quartiles.index.map(config["x_axis_map"])
     df_consumption_quartiles = df_consumption_quartiles.reindex(config["x_axis_map"].values()).dropna(how="all")
-    
+
     return df_consumption_quartiles
 
 @st.cache_data(ttl=3600)
@@ -450,14 +450,14 @@ def compute_example_day(df: pd.DataFrame, random_day, group: bool = False) -> pd
     """Selects a random day and return the data for plotting."""
     logger.log("Computing Example Day")
     df_hour = df[df["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.date == random_day].copy()
-    
+
     if not df_hour.empty:
         df_hour["hour"] = df_hour["timestamp"].dt.tz_convert(LOCAL_TIMEZONE).dt.hour
         if group:
             df_hour = df_hour.groupby("hour")[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]].sum()
         else:
             df_hour = df_hour.set_index("timestamp")[["base_load_kwh", "regular_load_kwh", "peak_load_kwh"]]
-                
+
         df_hour = df_hour.rename(columns={"base_load_kwh": "Base Load", "regular_load_kwh": "Regular Load", "peak_load_kwh": "Peak Load"})
         return df_hour
     return pd.DataFrame()
@@ -466,7 +466,7 @@ def compute_example_day(df: pd.DataFrame, random_day, group: bool = False) -> pd
 def fit_forecast_model(df: pd.DataFrame) -> tuple[Prophet|None, pd.DataFrame]:
     """Fits the Prophet model on provided data."""
     if "timestamp" not in df.columns: return None, pd.DataFrame()
-    
+
     df_daily = df.resample("D", on="timestamp")["consumption_kwh"].sum().reset_index()
     df_daily = df_daily.rename(columns={"timestamp": "ds", "consumption_kwh": "y"})
     df_daily["ds"] = df_daily["ds"].dt.tz_localize(None)
@@ -475,12 +475,12 @@ def fit_forecast_model(df: pd.DataFrame) -> tuple[Prophet|None, pd.DataFrame]:
     if len(df_daily) < 30: return None, pd.DataFrame()
 
     holidays = pd.DataFrame({'holiday': 'absence', 'ds': df_daily[df_daily["y"].isna()]["ds"], 'lower_window': 0, 'upper_window': 0})
-    
+
     use_yearly = len(df_daily) >= 365
     model = Prophet(holidays=holidays, yearly_seasonality=use_yearly)
     model.add_country_holidays(country_name="AT")
     if not use_yearly: model.add_seasonality(name="monthly", period=30.5, fourier_order=5)
-    
+
     model.fit(df_daily.dropna())
     return model, df_daily
 
@@ -488,7 +488,7 @@ def fit_forecast_model(df: pd.DataFrame) -> tuple[Prophet|None, pd.DataFrame]:
 def compute_consumption_trend_and_forecast(df: pd.DataFrame, forecast_periods: int = 90):
     """Analyzes and forecasts daily consumption using Prophet."""
     logger.log("Computing Consumption Trend and Forecast with Prophet")
-    
+
     model, df_daily = fit_forecast_model(df)
     if model is None: return None
 
@@ -497,7 +497,7 @@ def compute_consumption_trend_and_forecast(df: pd.DataFrame, forecast_periods: i
 
     for col in ["yhat", "yhat_lower", "yhat_upper", "trend"]:
         if col in forecast.columns: forecast[col] = forecast[col].clip(0)
-            
+
     historical_trend = forecast[forecast['ds'].isin(df_daily['ds'])]['trend']
     slope, _ = np.polyfit(np.arange(len(historical_trend)), historical_trend.values, 1)
     total_change = slope * len(historical_trend)
@@ -507,7 +507,7 @@ def compute_consumption_trend_and_forecast(df: pd.DataFrame, forecast_periods: i
     if abs(percent_change) < THRESHOLD_STABLE_TREND: trend_description = "Stable"
     elif percent_change > 0: trend_description = "Increasing"
     else: trend_description = "Decreasing"
-        
+
     return df_daily, forecast, trend_description, percent_change
 
 @st.cache_data(ttl=3600)
@@ -516,13 +516,13 @@ def compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
     logger.log("Computing Yearly Summary")
     df["Year"] = df["timestamp"].dt.year
     summary_agg = { "Total Consumption": ("consumption_kwh", "sum"), "Total Static Cost": ("total_cost_static", "sum") }
-    
+
     is_granular = "total_cost_flexible" in df.columns
     if is_granular: summary_agg["Total Flexible Cost"] = ("total_cost_flexible", "sum")
     if "total_cost_variable" in df.columns: summary_agg["Total Variable Cost"] = ("total_cost_variable", "sum")
-        
+
     yearly_agg = df.groupby("Year").agg(**summary_agg).reset_index()
-    
+
     if not yearly_agg.empty and yearly_agg["Total Consumption"].sum() > 0:
         cost_cols_yearly = [c for c in ["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"] if c in yearly_agg.columns]
         if is_granular and len(cost_cols_yearly) >= 2:

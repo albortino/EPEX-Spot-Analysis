@@ -158,7 +158,7 @@ class ConsumptionDataParser:
         try:
             with open(self.user_formats_file, "r", encoding="utf-8") as f:
                 formats_from_json = json.load(f)
-            
+
             user_formats = [ProviderFormat(**item) for item in formats_from_json]
             logger.log(f"Loaded {len(user_formats)} user-defined provider configurations from {self.user_formats_file}.", severity=1)
             return user_formats
@@ -173,13 +173,13 @@ class ConsumptionDataParser:
         """Saves the current provider_formats to the JSON cache file."""
         if not formats:
             return
-        
+
         try:
             if not os.path.exists(CACHE_FOLDER):
                 os.makedirs(CACHE_FOLDER)
-            
+
             formats_as_dict = [asdict(fmt) for fmt in formats]
-            
+
             with open(self.cache_file, "w", encoding="utf-8") as f:
                 json.dump(formats_as_dict, f, indent=4, ensure_ascii=False)
             logger.log(f"Saved {len(formats)} provider configurations to cache at {self.cache_file}", severity=1)
@@ -191,7 +191,7 @@ class ConsumptionDataParser:
         try:
             with open(self.cache_file, "r", encoding="utf-8") as f:
                 formats_from_json = json.load(f)
-            
+
             formats = [ProviderFormat(**item) for item in formats_from_json]
             logger.log(f"Loaded {len(formats)} provider configurations from cache.", severity=1)
             return formats
@@ -207,7 +207,7 @@ class ConsumptionDataParser:
             parsed_formats = self.js_parser.parse_js_file(js_content)
             if not parsed_formats:
                 raise ValueError("No provider formats found in JavaScript content.")
-            
+
             logger.log(f"Loaded {len(parsed_formats)} provider configurations from JavaScript.", severity=1)
             return parsed_formats
         except Exception as e:
@@ -235,35 +235,30 @@ class ConsumptionDataParser:
             return pd.DataFrame()
 
         for provider_format in self.provider_formats:
-            try:
-                df = self._try_parse(io.StringIO(file_content), provider_format)
-                if not df.empty:
-                    logger.log(f"Successfully parsed with format: {provider_format.name}", severity=1)
-                    return self._standardize_dataframe(df)
-            except Exception as e:
-                # This is expected if a format doesn"t match, so no log needed unless debugging.
-                # logger.log(f"Attempted format "{provider_format.name}" and failed: {e}")
-                continue
-        
+            df = self._try_parse(io.StringIO(file_content), provider_format)
+            if not df.empty:
+                logger.log(f"Successfully parsed with format: {provider_format.name}", severity=1)
+                return self._standardize_dataframe(df)
+
         logger.log("No suitable parser found for the uploaded file.", severity=1)
         return pd.DataFrame()
 
     def _try_parse(self, file_content_io: io.StringIO, config: ProviderFormat) -> pd.DataFrame:
         """Enhanced parser that handles more complex cases from JavaScript configurations."""
         df = pd.read_csv(file_content_io, sep=config.separator, decimal=config.decimal,
-                         skiprows=config.skiprows, encoding=config.encoding, 
+                         skiprows=config.skiprows, encoding=config.encoding,
                          skipinitialspace=True, on_bad_lines="skip")
 
         # Clean column names
         df.columns = df.columns.str.strip()
-        
+
         # Check required columns
         required_cols = [config.timestamp_col] + (config.other_cols if config.other_cols else [])
         if config.time_sub_col:
             required_cols.append(config.time_sub_col)
         if config.end_timestamp_col:
             required_cols.append(config.end_timestamp_col)
-        
+
         if not all(col in df.columns for col in required_cols):
             raise ValueError(f"Missing required columns for format: {config.name}")
 
@@ -271,10 +266,10 @@ class ConsumptionDataParser:
         usage_col_name = self._find_usage_column(df.columns, config.usage_col)
         if not usage_col_name:
             raise ValueError(f"Usage column not found for format: {config.name}")
-        
+
         # Process entries
         df.rename(columns={usage_col_name: "consumption_kwh"}, inplace=True)
-        
+
         # Handle timestamp combination
         if config.time_sub_col:
             df["timestamp_str"] = (df[config.timestamp_col].astype(str).str.strip() + " " + df[config.time_sub_col].astype(str).str.strip())
@@ -285,26 +280,26 @@ class ConsumptionDataParser:
         if config.preprocess_date_func:
             # Vectorized operation is much faster than .apply()
             df["timestamp_str"] = df["timestamp_str"].str.split('-').str[0].str.strip()
-        
+
         # Parse consumption values
         df["consumption_kwh"] = pd.to_numeric(df["consumption_kwh"].astype(str).str.replace(",", "."), errors="coerce")
-        
+
         # Apply should_skip logic
         if config.should_skip_func:
             df = self._apply_skip_logic(df, config.should_skip_func)
-        
+
         # Filter based on end timestamp if specified
         if config.end_timestamp_col:
             df = self._filter_by_time_interval(df, config)
-        
+
         df.dropna(subset=["timestamp_str", "consumption_kwh"], inplace=True)
-        
+
         # Parse timestamps
         if config.date_format == "ISO8601":
             df["timestamp_local"] = pd.to_datetime(df["timestamp_str"], utc=True)
         else:
             df["timestamp_local"] = pd.to_datetime(df["timestamp_str"], format=config.date_format, dayfirst=True)
-        
+
         # Apply timestamp fixup
         if config.fixup_timestamp:
              df["timestamp_local"] -= pd.Timedelta(minutes=15)
@@ -348,34 +343,34 @@ class ConsumptionDataParser:
 
     def _standardize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Convert timestamp to UTC and standardize the output format. Handles DST transitions robustly."""
-        
+
         def handle_dst_transitions(df: pd.DataFrame, timezone_str: str) -> pd.Series:
             """
             Handle DST transitions by identifying and processing different types of timestamps.
-            
+
             Parameters:
                 df: DataFrame with a "timestamp_local" column (naive datetime)
                 timezone_str: Timezone string (e.g., "Europe/Vienna")
-                
+
             Returns:
                 A pandas Series with timezone-aware UTC timestamps.
             """
             timezone = pytz.timezone(timezone_str)
             utc_timestamps = []
-            
+
             for timestamp in df["timestamp_local"]:
                 try:
                     # First, try normal localization
                     localized = timezone.localize(timestamp)
                     utc_timestamps.append(localized.astimezone(pytz.UTC))
-                    
+
                 except pytz.AmbiguousTimeError:
                     # Handle fall-back transition (ambiguous time)
                     # Default to DST=False (standard time) for consistency
                     localized = timezone.localize(timestamp, is_dst=False)
                     utc_timestamps.append(localized.astimezone(pytz.UTC))
                     logger.log(f"Ambiguous time {timestamp} resolved to standard time")
-                    
+
                 except pytz.NonExistentTimeError:
                     # Handle spring-forward transition (non-existent time)
                     # Move forward to the next valid time
@@ -389,48 +384,48 @@ class ConsumptionDataParser:
                         # If that fails, use UTC directly
                         utc_timestamps.append(timestamp.replace(tzinfo=pytz.UTC))
                         logger.log(f"Non-existent time {timestamp} treated as UTC")
-                        
+
                 except Exception as e:
                     # Fallback for any other errors
                     logger.log(f"Unexpected error localizing {timestamp}: {e}")
                     utc_timestamps.append(timestamp.replace(tzinfo=pytz.UTC))
-            
+
             return pd.Series(utc_timestamps, index=df.index)
-        
+
         # Input validation
         if df.empty:
             logger.log("Input DataFrame is empty")
             return df
-            
+
         if "timestamp_local" not in df.columns:
             logger.log("DataFrame missing 'timestamp_local' column")
             return df
-            
+
         if "consumption_kwh" not in df.columns:
             logger.log("DataFrame missing 'consumption_kwh' column")
             return df
-        
+
         # Sort by timestamp to ensure proper ordering
         df = df.sort_values(by="timestamp_local").reset_index(drop=True)
-        
+
         # Handle timezone conversion
         if df["timestamp_local"].dt.tz is not None:
             # Already timezone-aware, just convert to UTC
             df["timestamp"] = df["timestamp_local"].dt.tz_convert("UTC")
             logger.log("Converted timezone-aware timestamps to UTC")
-            
+
         else:
             # Handle naive timestamps
             timezone_str = getattr(self, "local_timezone", "Europe/Vienna")
-            
+
             try:
                 # Use our robust DST handler
                 df["timestamp"] = handle_dst_transitions(df, timezone_str)
                 logger.log(f"Successfully localized naive timestamps using {timezone_str}")
-                
+
             except Exception as e:
                 logger.log(f"Error in DST transition handling: {e}")
-                
+
                 # Final fallback: treat as UTC
                 try:
                     df["timestamp"] = df["timestamp_local"].dt.tz_localize("UTC")
@@ -438,16 +433,16 @@ class ConsumptionDataParser:
                 except Exception as fallback_error:
                     logger.log(f"Even fallback failed: {fallback_error}")
                     return pd.DataFrame()  # Return empty DataFrame on complete failure
-        
+
         # Validate that we have valid timestamps
         if df["timestamp"].isna().any():
             logger.log("Some timestamps could not be converted, dropping NaT values")
             df = df.dropna(subset=["timestamp"])
-        
+
         if df.empty:
             logger.log("No valid timestamps after conversion")
             return df
-        
+
         # Determine aggregation level
         try:
             intervals_per_day = get_intervals_per_day(df)
@@ -461,7 +456,7 @@ class ConsumptionDataParser:
         except Exception as e:
             logger.log(f"Could not determine intervals per day: {e}, defaulting to hourly")
             aggregation_level = "h"
-        
+
         # Resample data
         try:
             df_resampled = (df.set_index("timestamp")["consumption_kwh"]
@@ -469,10 +464,10 @@ class ConsumptionDataParser:
                         .sum()
                         .dropna()
                         .reset_index())
-            
+
             # Ensure we have the expected columns
             df_result = df_resampled[["timestamp", "consumption_kwh"]].reset_index(drop=True)
-            
+
             # --- Memory Optimization ---
             # Downcast numeric columns to the smallest possible type to save memory
             df_result["consumption_kwh"] = pd.to_numeric(df_result["consumption_kwh"], downcast="float")
@@ -487,9 +482,9 @@ class ConsumptionDataParser:
                 logger.log("DataFrame is empty after resampling")
             else:
                 logger.log(f"Successfully resampled to {len(df_result)} rows")
-                
+
             return df_result
-            
+
         except Exception as e:
             logger.log(f"Error during resampling: {e}")
             return pd.DataFrame()
@@ -497,10 +492,10 @@ class ConsumptionDataParser:
 
 # Example usage
 if __name__ == "__main__":
-    
+
     # Create parser with default configurations
     parser = ConsumptionDataParser()
-    
+
     logger.log("Available provider formats:")
     for fmt in parser.provider_formats:
         logger.log(f"- {fmt.name}")
