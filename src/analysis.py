@@ -350,7 +350,11 @@ def compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataFr
     df_summary = df.groupby(grouper).agg(**summary_agg_dict).reset_index()
     df_summary = df_summary[df_summary["Total Consumption"] > 0.01] # Filter out empty periods
     
-    df_summary["Difference (€)"] = df_summary["Total Static Cost"] - df_summary["Total Flexible Cost"]
+    cost_cols_summary = [c for c in ["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"] if c in df_summary.columns]
+    if len(cost_cols_summary) >= 2:
+        df_summary["Difference (€)"] = df_summary[cost_cols_summary].max(axis=1) - df_summary[cost_cols_summary].min(axis=1)
+    else:
+        df_summary["Difference (€)"] = 0.0
     df_summary["Period"] = df_summary["timestamp"].dt.strftime("%Y-%m-%d" if resolution == "Daily" else "%G-W%V" if resolution == "Weekly" else "%Y-%m")
 
     # Calculate average prices
@@ -519,8 +523,11 @@ def compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
     yearly_agg = df.groupby("Year").agg(**summary_agg).reset_index()
     
     if not yearly_agg.empty and yearly_agg["Total Consumption"].sum() > 0:
-        if is_granular:
-            yearly_agg["Difference (€)"] = yearly_agg["Total Static Cost"] - yearly_agg["Total Flexible Cost"]
+        cost_cols_yearly = [c for c in ["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"] if c in yearly_agg.columns]
+        if is_granular and len(cost_cols_yearly) >= 2:
+            yearly_agg["Difference (€)"] = yearly_agg[cost_cols_yearly].max(axis=1) - yearly_agg[cost_cols_yearly].min(axis=1)
+        elif is_granular:
+            yearly_agg["Difference (€)"] = 0.0
         yearly_agg["Avg. Static Price"] = yearly_agg["Total Static Cost"] / yearly_agg["Total Consumption"]
         if is_granular: yearly_agg["Avg. Flex Price"] = yearly_agg["Total Flexible Cost"] / yearly_agg["Total Consumption"]
         if "Total Variable Cost" in yearly_agg.columns:

@@ -170,3 +170,26 @@ def test_compute_usage_profile_data_spot_and_variable(multi_day_15m_df):
     fig_var = get_marimekko_chart(profile_var, price_type="variable")
     assert fig_var is not None
     assert len(fig_var.data) > 0
+
+
+def test_yearly_summary_and_cumulative_chart_titles(multi_day_15m_df):
+    """Verify yearly summary supports 3 tariffs with Difference as max-min, and cumulative savings chart shows title."""
+    from src.analysis import compute_yearly_summary, compute_cumulative_savings_data
+    from src.charts import get_cumulative_savings_chart
+
+    df = multi_day_15m_df.copy()
+    df["total_cost_variable"] = df["consumption_kwh"] * 0.05
+
+    yearly = compute_yearly_summary(df)
+    assert not yearly.empty
+    assert "Total Flexible Cost" in yearly.columns
+    assert "Total Variable Cost" in yearly.columns
+    assert "Total Static Cost" in yearly.columns
+    assert "Difference (€)" in yearly.columns
+    expected_diff = yearly[["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"]].max(axis=1) - yearly[["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"]].min(axis=1)
+    assert yearly["Difference (€)"].tolist() == pytest.approx(expected_diff.tolist())
+
+    savings_df = compute_cumulative_savings_data(df)
+    chart = get_cumulative_savings_chart(savings_df)
+    assert chart.layout.title.text is not None
+    assert "vs." in chart.layout.title.text

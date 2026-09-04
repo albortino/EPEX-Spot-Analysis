@@ -410,6 +410,24 @@ def get_total_cost_chart(df_summary: pd.DataFrame, is_granular: bool) -> go.Figu
 def get_cumulative_savings_chart(df: pd.DataFrame) -> go.Figure:
     """Creates a line chart showing the cumulative savings over time."""
     fig = go.Figure()
+
+    col_title_map = {
+        "total_cost_flexible": t("flexible_plan_title"),
+        "total_cost_spot": t("flexible_plan_title"),
+        "total_cost_variable": t("variable_plan_title"),
+        "total_cost_static": t("static_plan_title"),
+        "total_cost_fixed": t("static_plan_title"),
+    }
+
+    if "cheapest_col" in df.columns and "expensive_col" in df.columns and not df.empty:
+        c_col = df["cheapest_col"].iloc[0]
+        e_col = df["expensive_col"].iloc[0]
+        cheapest_name = col_title_map.get(c_col, c_col)
+        expensive_name = col_title_map.get(e_col, e_col)
+        chart_title = t("cumulative_savings_chart_title", cheapest=cheapest_name, expensive=expensive_name)
+    else:
+        chart_title = t("cumulative_savings_header")
+
     fig.add_trace(go.Scatter(
         x=df["timestamp"],
         y=df["cumulative_savings"],
@@ -417,6 +435,10 @@ def get_cumulative_savings_chart(df: pd.DataFrame) -> go.Figure:
         name=t("cumulative_savings_trace_name"),
         line=dict(color=FLEX_COLOR)
     ))
-    fig.update_layout(xaxis_title=t("trend_x_axis"), yaxis_title=t("cumulative_savings_y_axis"),
-                      hovermode="x unified")
+    fig.update_layout(
+        title=dict(text=chart_title, x=0.0, xanchor="left"),
+        xaxis_title=t("trend_x_axis"),
+        yaxis_title=t("cumulative_savings_y_axis"),
+        hovermode="x unified"
+    )
     return fig

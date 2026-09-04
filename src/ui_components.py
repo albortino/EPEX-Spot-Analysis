@@ -535,6 +535,20 @@ def _display_summary_table(df_summary: pd.DataFrame, is_granular: bool):
         styler = df_display[cols_to_show].style
         if col_names["Difference (€)"] in cols_to_show:
             styler = styler.map(difference_formatter, subset=[col_names["Difference (€)"]])
+
+        # Bold lowest total cost for each row/date
+        cost_cols = [col_names[c] for c in ["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"] if c in col_names]
+        active_cost_cols = [c for c in cost_cols if c in cols_to_show]
+        if len(active_cost_cols) >= 2:
+            def highlight_lowest_cost(row):
+                styles = [''] * len(row)
+                vals = row[active_cost_cols]
+                min_val = vals.min()
+                for i, col in enumerate(row.index):
+                    if col in active_cost_cols and row[col] == min_val:
+                        styles[i] = 'font-weight: bold;'
+                return styles
+            styler = styler.apply(highlight_lowest_cost, axis=1)
     else:
         cols_to_show = [col_names[c] for c in ["Period", "Total Consumption", "Total Static Cost", "Avg. Static Price"] if c in col_names]
         styler = df_display[cols_to_show].style
@@ -623,11 +637,17 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
             cumulative_savings_fig = charts.get_cumulative_savings_chart(df_cumulative_savings)
             st.plotly_chart(cumulative_savings_fig, config={"width": "stretch"})
             
-    st.subheader(t("detailed_comparison_table_header"))
-    st.text(t("detailed_comparison_table_markdown"), help=t("detailed_comparison_table_help"))
-    
     # Main DataFrame
     df_summary = compute_cost_comparison_data(df, "Monthly") # Default to monthly for the table
+    st.subheader(t("detailed_comparison_table_header"))
+    
+    saving_info = ""
+    cost_cols = [c for c in ["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"] if c in df_summary.columns]
+    if is_granular and len(cost_cols) >= 2 and "Difference (€)" in df_summary.columns:
+        total_saving_val = df_summary["Difference (€)"].sum()
+        saving_info = f" **{t('total_saving_potential_label')}: €{total_saving_val:,.2f}**."
+    st.markdown(f"{t('detailed_comparison_table_markdown')}{saving_info}", help=t("detailed_comparison_table_help"))
+    
     cols_to_show, style_format, diff_formatter = _display_summary_table(df_summary, is_granular)
 
     # Calculate totals
@@ -637,10 +657,23 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
 
     # Style and display the totals DataFrame
     st.text(t("total_and_average_values_text"))
-    totals_styler = df_display.rename(columns={col: t(f"col_{col.lower().replace(' (€)', '').replace(' ', '_')}") for col in df_display.columns}).style
+    df_totals_display = df_display.rename(columns={col: t(f"col_{col.lower().replace(' (€)', '').replace(' ', '_')}") for col in df_display.columns})
+    totals_styler = df_totals_display.style
     if is_granular:
         totals_styler = totals_styler.map(diff_formatter, subset=[t("col_difference")])
-    
+        totals_cost_cols = [t("col_total_flex_cost"), t("col_total_variable_cost"), t("col_total_static_cost")]
+        active_totals_cost_cols = [c for c in totals_cost_cols if c in df_totals_display.columns]
+        if len(active_totals_cost_cols) >= 2:
+            def highlight_totals_min(row):
+                styles = [''] * len(row)
+                vals = row[active_totals_cost_cols]
+                min_val = vals.min()
+                for i, col in enumerate(row.index):
+                    if col in active_totals_cost_cols and row[col] == min_val:
+                        styles[i] = 'font-weight: bold;'
+                return styles
+            totals_styler = totals_styler.apply(highlight_totals_min, axis=1)
+
     totals_styler = totals_styler.format(style_format)
     st.dataframe(totals_styler.hide(axis="index"), hide_index=True, width="stretch")
     
