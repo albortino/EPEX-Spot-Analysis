@@ -355,12 +355,19 @@ def render_recommendation(
     else:
         additional_text = t("peak_ratio_potential")
 
+    type_name_map = {
+        "spot": t("tariff_type_spot"),
+        "variable": t("tariff_type_variable"),
+        "fixed": t("tariff_type_fixed"),
+    }
+    expensive_option = type_name_map.get(most_expensive_type, most_expensive_type.title())
+
     if cheapest_type == "spot":
-        st.success(t("flex_plan_recommended", savings=savings, additional_text=additional_text, link_text=link_text), icon="✅")
+        st.success(t("flex_plan_recommended", savings=savings, expensive_option=expensive_option, additional_text=additional_text, link_text=link_text), icon="✅")
     elif cheapest_type == "variable":
-        st.success(t("variable_plan_recommended", savings=savings, additional_text="", link_text=link_text), icon="✅")
+        st.success(t("variable_plan_recommended", savings=savings, expensive_option=expensive_option, additional_text="", link_text=link_text), icon="✅")
     else:
-        st.info(t("static_plan_recommended", savings=savings, abs_savings=savings, link_text=link_text), icon="ℹ️")
+        st.info(t("static_plan_recommended", savings=savings, expensive_option=expensive_option, abs_savings=savings, link_text=link_text), icon="ℹ️")
 
     # Spacing
     st.container(height=50, border=False)

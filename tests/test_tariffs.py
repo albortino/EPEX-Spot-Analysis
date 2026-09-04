@@ -225,3 +225,12 @@ def test_missing_files_handled_gracefully():
     assert manager.flex_tariffs == []
     assert manager.static_tariffs == []
     assert manager.variable_tariffs == []
+
+
+def test_recommendation_translations_include_expensive_option():
+    """Verify recommendation translation keys contain the ({expensive_option}) placeholder."""
+    from src.i18n import t
+    for key in ["flex_plan_recommended", "variable_plan_recommended", "static_plan_recommended"]:
+        text = t(key, savings=56.43, expensive_option="Fix", additional_text="", link_text="")
+        assert "(Fix)" in text
+        assert "56.43" in text
