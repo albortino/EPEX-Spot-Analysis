@@ -50,15 +50,15 @@ Dieses Dashboard verschneidet deine historischen Smart-Meter-Messwerte (typische
 
 ### 1. Repository klonen
 ```bash
-git clone <repository_url>
-cd strompreis-analyse
+git clone https://github.com/albortino/EPEX-Spot-Analysis.git
+cd EPEX-Spot-Analysis
 ```
 
 ### 2. Umgebung einrichten
 Mit Conda (empfohlen):
 ```bash
 conda env create -f environment.yml
-conda activate strompreis-analyse
+conda activate epex-analysis
 ```
 *Alternativ mit `pip`: `pip install -r requirements.txt` (sofern vorhanden).*
 
