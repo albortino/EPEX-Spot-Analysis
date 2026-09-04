@@ -32,7 +32,7 @@ def main():
         return
     
     # --- Sidebar and Input Controls ---
-    country, start_date, end_date, selected_quarter, shift_percentage = ui_components.render_sidebar_inputs(df_consumption)
+    mode, country, start_date, end_date, selected_quarter, shift_percentage = ui_components.render_sidebar_inputs(df_consumption)
     
     # --- Data Loading and Merging ---
     df_consumption = filter_dataframe(df_consumption, start_date, end_date)
@@ -74,7 +74,9 @@ def main():
 
 
      # --- Tab Definitions based on Mode ---
-    tab_options = ["🏠 Your result", "💰 Compare tariffs", "⚡ Improve timing", "📊 Explore data", "⬇️ Download", "❓ FAQ"]
+    tab_options = ["🏠 Your result", "⚡ Improve timing", "⬇️ Download", "❓ FAQ"]
+    if mode == "Expert":
+        tab_options[1:1] = ["💰 Compare tariffs", "📊 Explore data"]
     
     tabs = st.tabs(tab_options)
     

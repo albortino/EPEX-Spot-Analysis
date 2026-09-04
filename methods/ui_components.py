@@ -16,17 +16,17 @@ from methods.validation import DataQuality
 
 
 def render_data_quality(quality: DataQuality, coverage: float | None = None) -> None:
-    """Show the evidence behind a result before presenting a tariff recommendation."""
+    """Keep supporting data diagnostics available without competing with results."""
     label = "Data quality" if st.session_state.get("lang", "de") == "en" else "Datenqualität"
-    with st.expander(label, expanded=not quality.usable):
-        st.caption(quality.message)
-        cols = st.columns(4)
-        cols[0].metric("Rows", f"{quality.rows:,}")
-        cols[1].metric("Resolution", f"{quality.resolution_minutes or '–'} min")
-        cols[2].metric("Duplicates", quality.duplicates)
-        cols[3].metric("Gaps", quality.gaps)
-        if coverage is not None:
-            st.metric("Spot-price coverage", f"{coverage:.0%}")
+    with st.sidebar:
+        with st.expander(label, expanded=not quality.usable):
+            st.caption(quality.message)
+            st.caption(
+                f"{quality.rows:,} rows · {quality.resolution_minutes or '–'} min · "
+                f"{quality.duplicates} duplicates · {quality.gaps} gaps"
+            )
+            if coverage is not None:
+                st.caption(f"Spot-price coverage: {coverage:.0%}")
 
 
 def render_energy_cost_notice() -> None:
@@ -174,11 +174,18 @@ def _render_tariff_selection_widgets(_tariff_manager: TariffManager, expanded: b
 
     return final_tariffs["flex"], final_tariffs["static"]
 
-def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, date, date, str, float]:
+def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, str, date, date, str, float]:
     """Renders all sidebar inputs and returns the configuration values."""
     logger.log("Rendering Sidebar")
     with st.sidebar:
         st.header(t("configuration"))
+
+        is_expert_mode = st.toggle(
+            "Expert Mode",
+            value=False,
+            help="Show detailed tariff comparisons and exploration charts."
+        )
+        mode = "Expert" if is_expert_mode else "Default"
 
         # 1. Country Selection for EPEX
         country_select = {"Austria": "at", "Germany": "de"}
@@ -227,7 +234,7 @@ def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, date, date, str, float
             st.markdown(t("simulate_shifting_markdown"), help=t("simulate_shifting_help"))
             shift_percentage = st.slider(t("shift_peak_load_slider"), min_value=0, max_value=100, value=0, step=5)
 
-        return awattar_country, start_date, end_date, selected_quarter, shift_percentage
+        return mode, awattar_country, start_date, end_date, selected_quarter, shift_percentage
 
 def render_tariff_selection_header(df: pd.DataFrame, tariff_manager: TariffManager, country: str, key_prefix: str = "") -> tuple[Tariff, Tariff]:
     """Renders the main tariff selection UI on the main page."""
