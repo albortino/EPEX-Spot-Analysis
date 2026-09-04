@@ -12,14 +12,37 @@ from methods.tariffs import Tariff, TariffManager, TariffType
 from methods.utils import to_excel, get_intervals_per_day, get_aggregation_config, calculate_granular_data, get_min_max_date
 import methods.charts as charts
 from methods.logger import logger
+from methods.validation import DataQuality
 
 # --- Introduction ---
 def render_intro():
-    st.markdown(f"## {t('intro_title')}\n\n{t('intro_subtitle')}")
-    st.info(t('intro_welcome_message'))
-    st.markdown(f"### {t('intro_introduction_header')}\n{t('intro_introduction_text')}\n\n"
-                f"**{t('intro_important_notice')}**")
+    """Renders a modern, card-based introduction for the user."""
+    #st.title(t('intro_title'))
+    st.markdown(f"<h2 style='text-align: center;'>{t('intro_subtitle')}</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h6 style='text-align: center;color: #808080;'>{t('intro_subtitle_detail')}</h6>", unsafe_allow_html=True)
+    
+    # Spacing
+    st.container(height=50, border=False)
 
+    
+    col1, col2, col3 = st.columns(3, gap="large")
+
+    with col1:
+        st.markdown(f"<div style='text-align: center;'><h3>{t('intro_step1_header')}</h3><p style='font-size: 2em; margin-bottom: -10px;'>📤</p></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center;'>{t('intro_step1_text')}</div>", unsafe_allow_html=True)
+    with col2:
+        st.markdown(f"<div style='text-align: center;'><h3>{t('intro_step2_header')}</h3><p style='font-size: 2em; margin-bottom: -10px;'>🔍</p></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center;'>{t('intro_step2_text')}</div>", unsafe_allow_html=True)
+    with col3:
+        st.markdown(f"<div style='text-align: center;'><h3>{t('intro_step3_header')}</h3><p style='font-size: 2em; margin-bottom: -10px;'>💡</p></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center;'>{t('intro_step3_text')}</div>", unsafe_allow_html=True)
+    
+    # Spacing
+    st.container(height=75, border=False)
+    
+    st.info(t('intro_welcome_message'), icon="👋")
+    
+    st.warning(f"**{t('intro_important_notice')}**", icon="🔒")
 
 # --- Sidebar and Input Controls ---
 def render_language_selection():
@@ -225,12 +248,12 @@ def render_tariff_selection_header(df: pd.DataFrame, tariff_manager: TariffManag
                 final_flex_tariff, final_static_tariff = _render_tariff_selection_widgets(tariff_manager, expanded=True, key_prefix=key_prefix)
                 return final_flex_tariff, final_static_tariff
 
-# --- Main Page Components ---
-
 def render_absence_days(df: pd.DataFrame, base_threshold: float, absence_threshold: float) -> pd.DataFrame:
     """Adds a sidebar option to remove days with very low consumption."""
     # Lazily import to avoid circular dependency
     from methods.analysis import compute_absence_data
+
+    # --- Main Page Components ---
 
     # Ensure the 'date' column exists before any processing.
     if 'date' not in df.columns and 'timestamp' in df.columns:
@@ -254,6 +277,7 @@ def render_absence_days(df: pd.DataFrame, base_threshold: float, absence_thresho
 def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: Tariff):
     """Displays the final tariff recommendation based on calculated savings."""
     logger.log("Rendering Recommendation")
+    from methods.analysis import compute_peak_timing_score
 
     is_granular_data = calculate_granular_data(df)
     if not is_granular_data:
@@ -261,13 +285,7 @@ def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: 
         return
 
     savings = df["total_cost_static"].sum() - df["total_cost_flexible"].sum()
-
-    # Calculate the proportion of peak consumption that occurs during the cheapest 25% of hours
-    df["price_quantile"] = df.groupby(pd.Grouper(key="timestamp", freq="MS"))["spot_price_eur_kwh"].transform(
-        lambda x: pd.qcut(x, 4, labels=False, duplicates="drop"))
-    peak_total_kwh = df["peak_load_kwh"].sum()
-    peak_cheap_kwh = df[df["price_quantile"] == 0]["peak_load_kwh"].sum()
-    peak_ratio = peak_cheap_kwh / peak_total_kwh if peak_total_kwh > 0 else 0
+    peak_ratio = compute_peak_timing_score(df)
     
 
     # Display the appropriate recommendation message
@@ -282,7 +300,9 @@ def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: 
     elif savings < 0: # Only show warning if there are actual losses
         link_text = t("check_cheapest_offer", link=static_tariff.link) if static_tariff.link else ""
         st.warning(t("static_plan_recommended", abs_savings=-savings, link_text=link_text), icon="⚠️")
-    # If savings is 0, no recommendation is strictly needed, or a neutral message could be added.
+    
+    # Spacing
+    st.container(height=50, border=False)
 
 # --- Tab: Spot Price Analysis ---
 
@@ -299,21 +319,39 @@ def render_price_analysis_tab(df: pd.DataFrame, static_tariff: Tariff):
     resolution = st.radio(t("price_analysis_resolution_label"), ("Monthly", "Weekly", "Hourly"), horizontal=True, key="price_res")
 
     df_price = compute_price_distribution_data(df, resolution)
-    price_fig = charts.get_price_chart(df_price, pd.Series([static_tariff.price_kwh]*len(df.index)))
-    st.plotly_chart(price_fig, use_container_width=True, key="price_analysis_chart")
+    price_fig = charts.get_price_chart(df_price, static_tariff.price_kwh)
+    st.plotly_chart(price_fig, config={"width": "stretch"}, key="price_analysis_chart")
 
     # Heatmap Analysis
     st.subheader(t("heatmap_header"))
     st.markdown(t("heatmap_markdown"))
     heatmap_data = compute_heatmap_data(df)
     heatmap_fig = charts.get_heatmap(heatmap_data)
-    st.plotly_chart(heatmap_fig, use_container_width=True, key="price_heatmap_chart")
+    st.plotly_chart(heatmap_fig, config={"width": "stretch"}, key="price_heatmap_chart")
 
 def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_threshold: float, peak_threshold: float):
     """Renders the content for the 'Basic Dashboard' tab."""
     logger.log("Rendering Basic Dashboard Tab")
     # Lazily import to avoid circular dependency
     from methods.analysis import compute_price_distribution_data, compute_cost_comparison_data, compute_consumption_quartiles, compute_usage_profile_data
+
+    # Consumption Summary Metrics
+    total_kwh = df["consumption_kwh"].sum()
+    days_count = max((df["timestamp"].max() - df["timestamp"].min()).total_seconds() / 86400, 1)
+    avg_month_kwh = total_kwh / (days_count / 30.4375)
+    est_year_kwh = total_kwh / (days_count / 365.25)
+
+    from methods.analysis import compute_peak_timing_score
+    col1, col2, col3, col4, col5 = st.columns(5)
+    days = max(int(round(days_count)), 1)
+    col1.metric(t("days_metric"), f"{days:,}")
+    col2.metric(t("total_consumption_metric"), f"{int(round(total_kwh)):,} kWh")
+    col3.metric(t("avg_consumption_per_month_metric"), f"{avg_month_kwh:,.1f} kWh")
+    col4.metric(t("estimated_consumption_per_year_metric"), f"{int(round(est_year_kwh)):,} kWh")
+
+    if calculate_granular_data(df):
+        score = compute_peak_timing_score(df)
+        col5.metric(t("peak_timing_score_metric"), f"{score:.0%}", help=t("peak_timing_score_help"))
 
     # 1. Price Chart (Monthly)
     st.subheader(t("price_over_time_header"))
@@ -322,8 +360,8 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     resolution = st.radio(t("price_analysis_resolution_label"), ("Monthly", "Weekly", "Hourly"), horizontal=True, key="basic_res")
 
     df_price = compute_price_distribution_data(df, resolution)
-    price_fig = charts.get_price_chart(df_price, pd.Series([static_tariff.price_kwh]*len(df.index)))
-    st.plotly_chart(price_fig, use_container_width=True, key="basic_price_chart")
+    price_fig = charts.get_price_chart(df_price, static_tariff.price_kwh)
+    st.plotly_chart(price_fig, config={"width": "stretch"}, key="basic_price_chart")
 
     # 2. Average Price per kWh
     st.subheader(t("avg_price_per_kwh_header"))
@@ -336,7 +374,7 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
             df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
         
         avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular_data)
-        st.plotly_chart(avg_price_fig, use_container_width=True, key="basic_avg_price_chart")
+        st.plotly_chart(avg_price_fig, config={"width": "stretch"}, key="basic_avg_price_chart")
 
     # 3. Daily Usage
     st.subheader(t("daily_consumption_header"))
@@ -346,7 +384,7 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     df_consumption_day = compute_consumption_quartiles(df, intervals)
     if not df_consumption_day.empty:
         consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals, df_median_spot)
-        st.plotly_chart(consumption_fig, use_container_width=True, key="basic_consumption_chart")
+        st.plotly_chart(consumption_fig, config={"width": "stretch"}, key="basic_consumption_chart")
 
     # 4. Usage Profile
     if intervals > 24: # Only for granular data
@@ -363,30 +401,51 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
         profile_data = compute_usage_profile_data(df)
         if not profile_data.empty:
             marimekko_fig = charts.get_marimekko_chart(profile_data)      
-            st.plotly_chart(marimekko_fig, use_container_width=True, key="basic_marimekko_chart")
+            st.plotly_chart(marimekko_fig, config={"width": "stretch"}, key="basic_marimekko_chart")
 
     # 5. Comparison Table
     render_cost_comparison_tab(df, mode="basic")
     
 # --- Tab: Cost Comparison ---
 def _display_summary_table(df_summary: pd.DataFrame, is_granular_data: bool):
-    """Helper to display and style the main summary dataframe."""
+    """Helper to display and style the main summary DataFrame with internationalized headers."""
     difference_formatter = lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}"
-    granular_col_format = {"Total Consumption": "{:.2f} kWh", "Total Flexible Cost": "€{:.2f}", "Total Static Cost": "€{:.2f}", "Difference (€)": "€{:.2f}"}
-    regular_col_format = {"Total Consumption": "{:,.2f} kWh", "Total Static Cost": "€{:.2f}"}
 
+    # Define column names using translations
+    col_names = {
+        "Period": t("col_period"),
+        "Total Consumption": t("col_total_consumption"),
+        "Total Flexible Cost": t("col_total_flex_cost"),
+        "Total Static Cost": t("col_total_static_cost"),
+        "Difference (€)": t("col_difference"),
+        "Avg. Flex Price": t("col_avg_flex_price"),
+        "Avg. Static Price": t("col_avg_static_price")
+    }
+
+    # Define formatting for the columns
+    style_format = {
+        col_names["Total Consumption"]: "{:,.2f} kWh",
+        col_names["Total Flexible Cost"]: "€{:,.2f}",
+        col_names["Total Static Cost"]: "€{:,.2f}",
+        col_names["Difference (€)"]: "€{:.2f}",
+        col_names["Avg. Flex Price"]: "€{:.4f}",
+        col_names["Avg. Static Price"]: "€{:.4f}"
+    }
+
+    # Select and rename columns
+    df_display = df_summary.rename(columns=col_names)
+    
     if is_granular_data:
-        cols_to_show = ["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)"]
-        styler = df_summary[cols_to_show].style
-        styler = styler.map(difference_formatter, subset=["Difference (€)"]) #type: ignore
-        styler = styler.format(granular_col_format)
+        cols_to_show = [col_names[c] for c in ["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)", "Avg. Flex Price", "Avg. Static Price"]]
+        styler = df_display[cols_to_show].style
+        styler = styler.map(difference_formatter, subset=[col_names["Difference (€)"]])
     else:
-        cols_to_show = ["Period", "Total Consumption", "Total Static Cost"]
-        styler = df_summary[cols_to_show].style
-        styler = styler.format(regular_col_format)
-        
-    st.dataframe(styler, hide_index=True, use_container_width=True)
-    return cols_to_show, granular_col_format, regular_col_format, difference_formatter
+        cols_to_show = [col_names[c] for c in ["Period", "Total Consumption", "Total Static Cost", "Avg. Static Price"]]
+        styler = df_display[cols_to_show].style
+
+    styler = styler.format(style_format)
+    st.dataframe(styler, hide_index=True, width="stretch")
+    return cols_to_show, style_format, difference_formatter
 
 def _compute_col_vals(df: pd.DataFrame, is_granular_data: bool, func, func_name: str) -> pd.DataFrame:
     """Computes aggregated column values using the provided function. """
@@ -400,6 +459,11 @@ def _compute_col_vals(df: pd.DataFrame, is_granular_data: bool, func, func_name:
         result["Total Flexible Cost"] = func(df["Total Flexible Cost"])
         result["Total Static Cost"] = func(df["Total Static Cost"])
         result["Difference (€)"] = func(df["Difference (€)"])
+        # For averages, we need to recalculate from totals, not average the averages
+        if func_name == "Average":
+            total_consumption = df["Total Consumption"].sum()
+            result["Avg. Flex Price"] = df["Total Flexible Cost"].sum() / total_consumption if total_consumption > 0 else 0
+            result["Avg. Static Price"] = df["Total Static Cost"].sum() / total_consumption if total_consumption > 0 else 0
     else:
         result["Total Static Cost"] = func(df["Total Static Cost"])
     
@@ -432,7 +496,7 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
             st.subheader(t("total_costs_per_period_header"))
             st.markdown(t("total_costs_per_period_markdown"))
             total_cost_fig = charts.get_total_cost_chart(df_summary, is_granular_data)
-            st.plotly_chart(total_cost_fig, use_container_width=True)
+            st.plotly_chart(total_cost_fig, config={"width": "stretch"})
         with col2:
             st.subheader(t("avg_price_per_kwh_header"))
             st.markdown(t("avg_price_per_kwh_markdown"))
@@ -442,7 +506,7 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
                 df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
             
             avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular_data)
-            st.plotly_chart(avg_price_fig, use_container_width=True)
+            st.plotly_chart(avg_price_fig, config={"width": "stretch"})
 
         # Cumulative Savings
         st.subheader(t("cumulative_savings_header"))
@@ -450,31 +514,45 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
         df_cumulative_savings = compute_cumulative_savings_data(df)
         if not df_cumulative_savings.empty:
             cumulative_savings_fig = charts.get_cumulative_savings_chart(df_cumulative_savings)
-            st.plotly_chart(cumulative_savings_fig, use_container_width=True)
+            st.plotly_chart(cumulative_savings_fig, config={"width": "stretch"})
             
     st.subheader(t("detailed_comparison_table_header"))
     st.text(t("detailed_comparison_table_markdown"), help=t("detailed_comparison_table_help"))
     
     # Main DataFrame
     df_summary = compute_cost_comparison_data(df, "Monthly") # Default to monthly for the table
-    cols_to_show, granular_format, regular_format, diff_formatter = _display_summary_table(df_summary, is_granular_data)
+    cols_to_show, style_format, diff_formatter = _display_summary_table(df_summary, is_granular_data)
 
     # Calculate totals
-    df_totals = _compute_col_vals(df_summary, is_granular_data, sum, "Total")
-    df_means = _compute_col_vals(df_summary, is_granular_data, lambda x: x.mean(), "Average")
+    df_totals = _compute_col_vals(df_summary, is_granular_data, sum, t("total_row_label"))
+    df_means = _compute_col_vals(df_summary, is_granular_data, lambda x: x.mean(), t("average_row_label"))
     df_display = pd.concat([df_totals, df_means], ignore_index=True)
 
     # Style and display the totals DataFrame
-    if is_granular_data:
-        totals_styler = df_display[cols_to_show].style
-        totals_styler = totals_styler.map(diff_formatter, subset=["Difference (€)"]) #type: ignore
-        totals_styler = totals_styler.format(granular_format)
-    else:
-        totals_styler = df_display[cols_to_show].style
-        totals_styler = totals_styler.format(regular_format)
-
     st.text(t("total_and_average_values_text"))
-    st.dataframe(totals_styler.hide(axis="index"), hide_index=True, use_container_width=True)
+    totals_styler = df_display.rename(columns={col: t(f"col_{col.lower().replace(' (€)', '').replace(' ', '_')}") for col in df_display.columns}).style
+    if is_granular_data:
+        totals_styler = totals_styler.map(diff_formatter, subset=[t("col_difference")])
+    
+    totals_styler = totals_styler.format(style_format)
+    st.dataframe(totals_styler.hide(axis="index"), hide_index=True, width="stretch")
+    
+    # --- Yearly Summary ---
+    # Lazily import to avoid circular dependency
+    from methods.analysis import compute_yearly_summary
+
+    df_yearly = compute_yearly_summary(df)
+    if not df_yearly.empty:
+        st.subheader(t("yearly_summary_header"))
+        st.text(t("yearly_summary_text"))
+
+        # Rename 'Year' to 'Period' to match the display function
+        df_yearly = df_yearly.rename(columns={"Year": "Period"})
+        df_yearly["Period"] = df_yearly["Period"].astype(str)
+
+        # Display the yearly table using the same helper
+        _display_summary_table(df_yearly, is_granular_data)
+
 
 # --- Tab: Usage Patterns ---
 
@@ -513,7 +591,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
     if not df_consumption_day.empty:
         df_median_spot = compute_price_distribution_data(df_filtered, "Hourly")
         consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals, df_median_spot)
-        st.plotly_chart(consumption_fig, use_container_width=True)
+        st.plotly_chart(consumption_fig, config={"width": "stretch"})
         
     # Trend Visualization and Forecast
     try:
@@ -560,14 +638,14 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
 
                 # Display the detailed chart
                 trend_fig = charts.get_trend_chart(df_daily_trend, df_forecast)
-                st.plotly_chart(trend_fig, use_container_width=True)
+                st.plotly_chart(trend_fig, config={"width": "stretch"})
 
                 # Expander for seasonality components
                 with st.expander(t("show_seasonality_details")):
                     st.markdown(t("seasonality_details_markdown"))
                     if model:
                         seasonality_charts = charts.get_seasonality_charts(model, df_forecast)
-                        st.plotly_chart(seasonality_charts, use_container_width=True, key=f"forecast_details")
+                        st.plotly_chart(seasonality_charts, config={"width": "stretch"}, key=f"forecast_details")
 
             else:
                 st.info(t("no_trend_info"))
@@ -602,7 +680,7 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
 
     if not profile_data.empty:
         marimekko_fig = charts.get_marimekko_chart(profile_data)      
-        st.plotly_chart(marimekko_fig, use_container_width=True)
+        st.plotly_chart(marimekko_fig, config={"width": "stretch"})
 
     # Example Day Breakdown
     st.subheader(t("example_day_breakdown_header"))
@@ -624,57 +702,40 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         day_str = st.session_state.random_day.strftime('%A, %Y-%m-%d')
         st.caption(t("example_day_caption", day=day_str, total_kwh=df_day.to_numpy().sum()))
         example_day_fig = charts.get_example_day_chart(df_day, intervals)
-        st.plotly_chart(example_day_fig, use_container_width=True)
-
-# --- Tab: Yearly Summary ---
-
-def render_yearly_summary_tab(df: pd.DataFrame):
-    """Renders the content for the 'Yearly Summary' tab."""
-    # Lazily import to avoid circular dependency
-    from methods.analysis import compute_yearly_summary
-
-    st.subheader(t("yearly_summary_header"))
-    st.text(t("yearly_summary_text"))
-
-    yearly_agg = compute_yearly_summary(df)
-    if yearly_agg.empty:
-        st.warning(t("no_yearly_summary_data"))
-        return
-    
-    # Rename columns for a more descriptive display in the table
-    display_df = yearly_agg.rename(columns={
-        "Avg. Flex Price": "Avg. Flex Price (€/kWh)",
-        "Avg. Static Price": "Avg. Static Price (€/kWh)"
-    })
-        
-    style_format: dict = {
-        "Total Consumption": "{:,.2f} kWh",
-        "Total Flexible Cost": "€{:,.2f}",
-        "Total Static Cost": "€{:,.2f}",
-        "Avg. Flex Price (€/kWh)": "€{:.4f}",
-        "Avg. Static Price (€/kWh)": "€{:.4f}"
-    }
-    st.dataframe(display_df.style.format(style_format), hide_index=True, use_container_width=True)
+        st.plotly_chart(example_day_fig, config={"width": "stretch"})
 
 # --- Tab: Download Data ---
 
 @st.cache_data(ttl=3600)
-def _compute_download_data(df: pd.DataFrame) -> tuple[bytes, bytes]:
+def _compute_download_data(df: pd.DataFrame, flex_tariff: Tariff) -> tuple[bytes, bytes]:
     """Prepares and caches the Excel file bytes for download."""
     logger.log("Computing Download Data")
     
+    df_download = df.copy()
+
+    # Calculate the flexible price per kWh based on the selected tariff
+    if "spot_price_eur_kwh" in df_download.columns and flex_tariff:
+        flex_price = df_download["spot_price_eur_kwh"] * (1 + flex_tariff.price_kwh_pct / 100) + flex_tariff.price_kwh
+        if flex_tariff.usage_tax:
+            flex_price *= 1.06
+        df_download["flex_price_eur_kwh"] = flex_price
+
     # Prepare data for spot price-only download (hourly resolution)
-    excel_spot_data_df = df.set_index("timestamp").resample("h").first().reset_index()[["timestamp", "spot_price_eur_kwh"]].dropna()
+    spot_cols = ["timestamp", "spot_price_eur_kwh"]
+    if "flex_price_eur_kwh" in df_download.columns:
+        spot_cols.append("flex_price_eur_kwh")
+        
+    excel_spot_data_df = df_download.set_index("timestamp").resample("h").first().reset_index()[spot_cols].dropna()
     excel_spot_bytes = to_excel(excel_spot_data_df)
     
     # Prepare full analysis data for download
-    excel_full_bytes = to_excel(df.drop(columns=["date", "days_in_month"]))
+    excel_full_bytes = to_excel(df_download.drop(columns=["date"], errors="ignore"))
 
     return excel_full_bytes, excel_spot_bytes
 
-def render_download_tab(df: pd.DataFrame, start_date: date, end_date: date):
+def render_download_tab(df: pd.DataFrame, flex_tariff: Tariff, start_date: date, end_date: date):
     """Renders the content for the Download tab."""
-    excel_full_data, excel_spot_data = _compute_download_data(df)
+    excel_full_data, excel_spot_data = _compute_download_data(df, flex_tariff)
     
     st.subheader(t("download_header"))
     
@@ -734,7 +795,19 @@ def render_about_tab():
 @st.cache_data
 def render_footer():
     """Renders the footer with information about the project and further links."""
-    
-    #st.markdown(footer_css, unsafe_allow_html=True)
-    st.markdown("---")
-    st.markdown(f'<div class="footer"><p>{t("footer_text")}</p></div>', unsafe_allow_html=True)
+    st.container(height=200, border=False)
+    st.markdown(f'<div class="footer"><p style="text-align: center;">{t("footer_text")}</p></div>', unsafe_allow_html=True)
+
+# --- Data Quality ---
+def render_data_quality(quality: DataQuality, coverage: float | None = None) -> None:
+    """Show the evidence behind a result before presenting a tariff recommendation."""
+    with st.expander(t("dataquality"), expanded=not quality.usable):
+        st.caption(quality.message)
+        cols = st.columns(4)
+        cols[0].metric("Rows", f"{quality.rows:,}")
+        cols[1].metric("Resolution", f"{quality.resolution_minutes or '–'} min")
+        cols[2].metric("Duplicates", quality.duplicates)
+        cols[3].metric("Gaps", quality.gaps)
+        if coverage is not None:
+            st.metric("Spot-price coverage", f"{coverage:.0%}")
+
