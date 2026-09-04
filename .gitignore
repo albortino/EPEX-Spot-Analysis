@@ -5,3 +5,4 @@
 graphify-out/
 .agents
 *.bak
+.DS_STORE

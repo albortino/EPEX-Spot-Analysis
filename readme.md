@@ -5,7 +5,12 @@ Ein interaktives Streamlit-Dashboard zur datengestützten Analyse des eigenen St
 > **Kernziel des Projekts**  
 >_Wieviel Geld hätte ich gespart, wenn ich einen flexiblen Spot-Tarif anstatt eines fixen Tarifs gehabt hätte?_
 
-Analysiere anhand deines **tatsächlichen, historischen Verbrauchsverhaltens**, ob **dynamische/flexible Stromtarife (EPEX Spot)** für dich günstiger sind als **klassische statische Tarife (fester Arbeitspreis pro kWh)** – ganz ohne Schätzwerte oder Rätselraten. Annahme ist, dass sich die historischen Preise und Verbrauchswerte für die Zukunft **hinreichend gut** annähern werden. Um Trends besser abzubilden, gibt es eine machine learning prognose basierend auf [Prophet](https://github.com/facebook/prophet). 
+Analysiere anhand deines **tatsächlichen, historischen Verbrauchsverhaltens**, ob **dynamische/flexible Stromtarife (EPEX Spot)** für dich günstiger sind als **klassische statische Tarife (fester Arbeitspreis pro kWh)** – ganz ohne Schätzwerte oder Rätselraten. Hierbei werden folgende Annahmen getroffen:
+- Die historischen Preise und Verbrauchswerte lassen sich für die Zukunft **hinreichend gut** annähern.
+- Die Marktpreise von EPEX Spot Tarife und fixe Tarife korrelieren im Mittel hinreichend gut, sodass Veränderungen im Markt an den Endkunden weitergegeben werden.
+- Das Verbrauchsverhalten bleibt konstant (keine neue grosse Anschaffung, keine PV Anlage, etc.). 
+
+Um Trends besser abzubilden, gibt es eine einfache machine learning Prognose basierend auf [Prophet](https://github.com/facebook/prophet). 
 
 
 ## Probiere es aus
