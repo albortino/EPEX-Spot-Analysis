@@ -7,7 +7,6 @@ from prophet import Prophet
 from methods.i18n import t
 
 def _get_interval_text(intervals_per_day: int, t) -> str:
-
     # Determine y-axis label based on data granularity
     if intervals_per_day == 24:
         interval_text = t("interval_per_hour")
@@ -20,6 +19,7 @@ def _get_interval_text(intervals_per_day: int, t) -> str:
     return interval_text
 
 def get_price_chart(df: pd.DataFrame, static_price: float) -> go.Figure:
+    """Creates a price chart showing the median spot price, the interquartile range (Q1-Q3) and the price for static tariffs."""
     fig = go.Figure()
 
     # First trace: Q1 (lower bound of the fill)
@@ -42,7 +42,7 @@ def get_price_chart(df: pd.DataFrame, static_price: float) -> go.Figure:
 
 
 def get_heatmap(df: pd.DataFrame) -> go.Figure:
-
+    """Creates a heatmap showing the spot prices in a grid of days and hours"""
     fig = px.imshow(
         df,
         labels=dict(x=t("heatmap_x_label"), y=t("heatmap_y_label"), color=t("heatmap_color_label")),
@@ -73,6 +73,7 @@ def get_consumption_price_heatmap(df: pd.DataFrame) -> go.Figure:
     return fig
 
 def get_consumption_chart(df: pd.DataFrame, intervals_per_day: int, df_median_spot_price: pd.DataFrame) -> go.Figure: # type: ignore
+    """Shows the daily consumption volume and the median spot price"""
     fig = go.Figure()
     df_plot = df.copy()
     idx = df_plot.index
@@ -103,7 +104,7 @@ def get_consumption_chart(df: pd.DataFrame, intervals_per_day: int, df_median_sp
     return fig
 
 def get_marimekko_chart(df: pd.DataFrame, border_color: str = "#FFFFFF") -> go.Figure:
- 
+    """Creates a marimekko chart with the different load profiles and their consumption as well as price."""
     bars = []
     cumulative_width = 0
     annotations = []
@@ -249,6 +250,7 @@ def get_seasonality_charts(model: Prophet, forecast: pd.DataFrame) -> go.Figure:
     return fig
 
 def get_example_day_chart(df_day: pd.DataFrame, intervals_per_day: int) -> go.Figure:
+    """Shows the usage profile for a typical day (base, regular and peak load)."""
     fig = go.Figure()
     hours = df_day.index.astype(str)  # e.g., "0", "1", ..., "23"
 

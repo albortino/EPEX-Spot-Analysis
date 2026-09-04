@@ -5,8 +5,7 @@ import methods.analysis as analysis
 import methods.ui_components as ui_components
 from methods.tariffs import TariffManager
 from methods.logger import logger
-from methods.utils import filter_dataframe, filter_by_quarter
-from methods.validation import inspect_consumption, inspect_price_coverage
+from methods.utils import filter_dataframe, filter_by_quarter, inspect_consumption, inspect_price_coverage
 
 
 # --- Page and App Configuration ---
@@ -41,7 +40,7 @@ def main():
     df_consumption = filter_by_quarter(df_consumption, selected_quarter)
     quality = inspect_consumption(df_consumption)
     if not quality.usable:
-        render_data_quality(quality)
+        ui_components.render_data_quality(quality)
         st.error("Analysis is unavailable until the data-quality issues above are fixed.")
         return
     
@@ -55,20 +54,17 @@ def main():
         return
 
     
-    # --- Perform initial analysis and render sidebar components that modify the dataframe ---
-    # This should be done once, before the tab loop.
+    # --- Perform initial analysis once and render sidebar components that modify the dataframe ---
     df_classified, base_threshold, peak_threshold = analysis.classify_usage(df_merged, config.LOCAL_TIMEZONE)
     df_analysis_base = ui_components.render_absence_days(df_classified, base_threshold, config.ABSENCE_THRESHOLD)
     
     # --- Perform main analysis pipeline once, outside the tab loop ---
-    # This is a major efficiency gain, as these expensive operations are not re-run for each tab.
     flex_tariff, static_tariff = ui_components.render_tariff_selection_header(df_merged, tariff_manager, country)
     df_with_shifting = analysis.simulate_peak_shifting(df_analysis_base, shift_percentage)
     df_analysis = tariff_manager.run_cost_analysis(df_with_shifting, flex_tariff, static_tariff)
     ui_components.render_recommendation(df_analysis, flex_tariff, static_tariff)
 
-
-     # --- Tab Definitions based on Mode ---
+    # --- Tab Definitions based on Mode ---
     if mode == "Expert":
         tab_options = [
             "📊 Spot Price Analysis", 

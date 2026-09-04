@@ -9,10 +9,9 @@ import io
 from methods.i18n import t
 from methods.config import *
 from methods.tariffs import Tariff, TariffManager, TariffType
-from methods.utils import to_excel, get_intervals_per_day, get_aggregation_config, calculate_granular_data, get_min_max_date
+from methods.utils import to_excel, get_intervals_per_day, get_aggregation_config, calculate_granular_data, get_min_max_date, DataQuality
 import methods.charts as charts
 from methods.logger import logger
-from methods.validation import DataQuality
 
 # --- Introduction ---
 def render_intro():

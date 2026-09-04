@@ -4,7 +4,7 @@ import pandas as pd
 
 from methods.analysis import simulate_peak_shifting
 from methods.tariffs import Tariff, TariffManager, TariffType
-from methods.validation import inspect_consumption, inspect_price_coverage
+from methods.utils import inspect_consumption, inspect_price_coverage
 
 
 def frame(timestamps, consumption=None):

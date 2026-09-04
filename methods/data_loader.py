@@ -71,9 +71,7 @@ def _fetch_spot_data(country: str, start: date, end: date, cache_filename: str) 
 
 @st.cache_data
 def get_spot_data(country: str, start: date, end: date) -> pd.DataFrame:
-    """
-    Fetches spot market price data, using a local cache to avoid redundant API calls.
-    """
+    """Fetches spot market price data, using a local cache to avoid redundant API calls."""
     if not os.path.exists(CACHE_FOLDER):
         os.makedirs(CACHE_FOLDER)
     

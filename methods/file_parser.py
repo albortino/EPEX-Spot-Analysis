@@ -133,9 +133,7 @@ class JavaScriptNetzbetreiberParser:
         )
     
     def _split_parameters(self, params_str: str) -> List[str]:
-        """
-        Split parameters while respecting nested structures.
-        """
+        """Split parameters while respecting nested structures."""
         params = []
         current_param = ""
         paren_depth = 0
@@ -186,10 +184,9 @@ class JavaScriptNetzbetreiberParser:
         return params
     
     def _clean_string(self, s: str) -> str:
-        """
-        Clean a string parameter by removing quotes.
-        """
+        """Clean a string parameter by removing quotes."""
         s = s.strip()
+        # Following is irrelevant
         #if s.startswith("'") and s.endswith("'"):
         #    return s[1:-1]
         #if s.startswith('"') and s.endswith('"'):
@@ -197,9 +194,7 @@ class JavaScriptNetzbetreiberParser:
         return s
     
     def _parse_array(self, array_str: str) -> List[str]:
-        """
-        Parse a JavaScript array string.
-        """
+        """Parse a JavaScript array string. """
         array_str = array_str.strip()
         if not (array_str.startswith("[") and array_str.endswith("]")):
             return []
@@ -236,7 +231,7 @@ class JavaScriptNetzbetreiberParser:
         return items
 
 class ConsumptionDataParser:
-    """Parser that can load configurations from JavaScript and parse various formats of electricity consumption data. """
+    """Parser that can load configurations from JavaScript (awattar backtesting) and parse various formats of electricity consumption data. """
 
     def __init__(self, local_timezone=LOCAL_TIMEZONE, js_url="https://raw.githubusercontent.com/awattar-backtesting/awattar-backtesting.github.io/main/docs/netzbetreiber.js", js_content=None):
         self.local_timezone = local_timezone
@@ -323,9 +318,7 @@ class ConsumptionDataParser:
             return []
 
     def _load_from_js_content(self, js_content: str) -> List[ProviderFormat]:
-        """
-        Load provider configurations from JavaScript content. Returns a list of formats or raises an exception on failure.
-        """
+        """Load provider configurations from JavaScript content. Returns a list of formats or raises an exception on failure. """
         try:
             parsed_formats = self.js_parser.parse_js_file(js_content)
             if not parsed_formats:
@@ -337,9 +330,7 @@ class ConsumptionDataParser:
             raise ValueError(f"Error parsing JavaScript content: {e}") from e
 
     def parse_file(self, uploaded_file) -> pd.DataFrame:
-        """
-        Tries to parse the uploaded file with all available format configurations.
-        """
+        """Tries to parse the uploaded file with all available format configurations."""
         if uploaded_file is None:
             return pd.DataFrame()
 
@@ -374,9 +365,7 @@ class ConsumptionDataParser:
         return pd.DataFrame()
 
     def _try_parse(self, file_content_io: io.StringIO, config: ProviderFormat) -> pd.DataFrame:
-        """
-        Enhanced parser that handles more complex cases from JavaScript configurations.
-        """
+        """Enhanced parser that handles more complex cases from JavaScript configurations."""
         df = pd.read_csv(file_content_io, sep=config.separator, decimal=config.decimal,
                          skiprows=config.skiprows, encoding=config.encoding, 
                          skipinitialspace=True, on_bad_lines="skip")
@@ -439,9 +428,7 @@ class ConsumptionDataParser:
         return df[["timestamp_local", "consumption_kwh"]].dropna()
 
     def _find_usage_column(self, columns: pd.Index, usage_descriptor: str) -> Optional[str]:
-        """
-        Find the usage column using exact match or fuzzy matching.
-        """
+        """Find the usage column using exact match or fuzzy matching."""
         if usage_descriptor.startswith("!"):
             # Fuzzy matching
             fuzzy_match_str = usage_descriptor[1:]
@@ -452,17 +439,8 @@ class ConsumptionDataParser:
             return usage_descriptor
         return None
 
-    def _apply_date_preprocessing(self, date_str: str) -> str:
-        """
-        Apply date preprocessing (simplified version).
-        DEPRECATED: Replaced with a faster vectorized operation in _try_parse.
-        """
-        return date_str.split("-")[0].strip() if "-" in date_str else date_str
-
     def _apply_skip_logic(self, df: pd.DataFrame, skip_func_str: str) -> pd.DataFrame:
-        """
-        Apply skip logic based on the function string (simplified implementation).
-        """
+        """Apply skip logic based on the function string (simplified implementation)."""
         # This is a simplified implementation
         # TODO: parse and evaluate the JavaScript function
         if "1.8.0" in skip_func_str:
@@ -472,9 +450,7 @@ class ConsumptionDataParser:
         return df
 
     def _filter_by_time_interval(self, df: pd.DataFrame, config: ProviderFormat) -> pd.DataFrame:
-        """
-        Filter entries based on time interval (remove daily aggregates).
-        """
+        """Filter entries based on time interval (remove daily aggregates)."""
         try:
             if config.end_timestamp_col in df.columns:
                 start_times = pd.to_datetime(df["timestamp_str"], format=config.date_format)
@@ -487,10 +463,7 @@ class ConsumptionDataParser:
         return df
 
     def _standardize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Convert timestamp to UTC and standardize the output format.
-        Handles DST transitions robustly.
-        """
+        """Convert timestamp to UTC and standardize the output format. Handles DST transitions robustly."""
         
         def handle_dst_transitions(df: pd.DataFrame, timezone_str: str) -> pd.Series:
             """
