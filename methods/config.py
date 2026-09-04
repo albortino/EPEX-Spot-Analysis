@@ -37,18 +37,6 @@ BASE_QUANTILE_THRESHOLD = 0.9
 PEAK_QUANTILE_THRESHOLD = 0.7
 STD_MULTIPLE = 1.25
 
-# Number of low-frequency harmonics (beyond DC) kept when reconstructing the
-# base signal via FFT. 0 = flat per-day base; 1 captures one slow daily rhythm.
-FFT_BASE_HARMONICS = 0
-
-# Hours of day considered "overnight" for anchoring the global base level.
-OVERNIGHT_HOURS = (1, 5)
-
-# Minimum consecutive intervals a residual must exceed the peak amplitude
-# threshold to qualify as a sustained peak (without a derivative trigger).
-# 1 = a single 15-min interval suffices (catches kettles, short bursts).
-PEAK_SUSTAIN_INTERVALS = 1
-
 # --- Forecast Parameters ---
 THRESHOLD_STABLE_TREND = 5
 

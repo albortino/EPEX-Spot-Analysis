@@ -111,31 +111,6 @@ The built-in tariff list is a convenience catalog, not a switching offer. Verify
     * `file_parser.py`: Houses the `ConsumptionDataParser` class responsible for parsing various CSV formats of consumption data. Interacts with [awattar backtesting](https://awattar-backtesting.github.io/) to use the exisitng javascript parsing logic.
     * `charts.py`: Provides custom functions for generating specific plot types used in the dashboard.
 
-## Usage Profile Classification — Methodology
-
-The **Persönliches Nutzungsprofil** (personal usage profile) decomposes your electricity consumption into three physically meaningful layers using a signal-processing approach rather than simple statistical thresholds.
-
-### Base Load
-For each calendar day the raw 15-minute (or hourly) consumption series is transformed via **Fast Fourier Transform (FFT)**. Only the DC component (constant draw) and the first harmonic (one slow daily rhythm) are retained; all higher frequencies are zeroed out and the signal is reconstructed via inverse FFT. This captures always-on appliances — fridge compressor cycles, modem, router, standby — as a smooth, slowly-varying floor that adapts to each day's background draw.
-
-To keep the base level **globally stable and comparable** across days, each day's reconstructed floor is rescaled so its mean matches the 95th percentile of raw overnight consumption (00:00–05:00). This prevents high-activity days from inflating their own base estimate.
-
-### Regular Load
-After the base signal is subtracted, the remaining **residual** represents discretionary consumption — lights, PC, TV, heating on demand. Everything in the residual that does not qualify as Peak Load is classified as Regular Load.
-
-### Peak Load
-Peak intervals are detected using two complementary conditions on the residual, combined with a logical OR:
-
-| Condition | Mechanism | Catches |
-|-----------|-----------|---------|
-| **A — Rapid onset** | Derivative of residual exceeds `STD_MULTIPLE × σ` of positive changes **and** residual exceeds the 70th-percentile sustain threshold (stateful: once entered, stays peak until residual drops below threshold) | Kettle, oven switching on, washing machine starting |
-| **B — Sustained amplitude** | Residual exceeds the same sustain threshold for ≥ 1 consecutive interval(s), even without a sharp derivative trigger | EV charger running steadily, oven bake session with gradual ramp-up |
-
-### Re-attribution Refinement
-During peak intervals the base and regular loads are still running underneath. An estimate of the average regular load from surrounding non-peak intervals on the same day is subtracted from the peak bucket and re-attributed to Regular Load, keeping all three buckets internally consistent.
-
----
-
 ## Acknowledgements
 
 This project was influenced by and extends the functionality presented in the [awattar backtesting](https://awattar-backtesting.github.io/) project, providing a more detailed and user-friendly interface for electricity tariff analysis.

@@ -23,10 +23,6 @@ class Tariff:
     price_kwh_pct: float = 0.0 # Percentage on-top for flexible tariffs
     link: str = ""
     usage_tax: bool = False
-    country: str = "at"
-    currency: str = "EUR"
-    reviewed_on: str = ""
-    source: str = ""
 
 class TariffManager:
     """Handles loading tariffs and calculating costs."""
@@ -48,8 +44,7 @@ class TariffManager:
                         price_kwh=item.get("price_kwh_gross", 0.0),
                         monthly_fee=item.get("monthly_fee_gross", 0.0),
                         link=item.get("link", ""),
-                        price_kwh_pct=item.get("price_kwh_pct", 0.0),
-                        country=item.get("country", "at"), reviewed_on=item.get("last_reviewed", ""), source=item.get("source", item.get("link", ""))
+                        price_kwh_pct=item.get("price_kwh_pct", 0.0)
                     ) for item in tariff_data
                 ]
                 
@@ -88,9 +83,11 @@ class TariffManager:
     def _calculate_static_cost(self, df: pd.DataFrame, tariff: Tariff) -> pd.Series:
         """Calculates the static costs based on a tariff and a dataframe with consumption data."""
         
-        seconds = df["timestamp"].sort_values().diff().dt.total_seconds().median()
-        interval_days = (seconds or 3600) / 86400
-        monthly_fee = tariff.monthly_fee * interval_days / df["timestamp"].dt.days_in_month
+        intervals_per_day = self._get_intervals_per_day(df)
+        days_in_month = df["timestamp"].dt.days_in_month
+        
+        # Calculate the proportion of the whole monthly fee for every row (=time resultion)
+        monthly_fee = (tariff.monthly_fee / days_in_month) / intervals_per_day
         
         price_kwh = tariff.price_kwh
         if tariff.usage_tax:
@@ -101,8 +98,8 @@ class TariffManager:
     def _calculate_flexible_cost(self, df: pd.DataFrame, tariff: Tariff) -> pd.Series:
         """Calculate the flexible costs based on a tariff and a dataframe with consumption as well as spot price data."""
         
-        seconds = df["timestamp"].sort_values().diff().dt.total_seconds().median()
-        interval_days = (seconds or 3600) / 86400
+        intervals_per_day = self._get_intervals_per_day(df)
+        days_in_month = df["timestamp"].dt.days_in_month
         
         price_kwh = tariff.price_kwh
             
@@ -112,7 +109,7 @@ class TariffManager:
             flex_spot_price_component *= 1.06
         
         # Calculate the proportion of the whole monthly fee for every row (=time resultion)
-        monthly_fee = tariff.monthly_fee * interval_days / df["timestamp"].dt.days_in_month
+        monthly_fee = (tariff.monthly_fee / days_in_month) / intervals_per_day
         
         return df["consumption_kwh"] * flex_spot_price_component + monthly_fee
         

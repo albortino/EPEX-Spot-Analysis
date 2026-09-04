@@ -39,3 +39,21 @@ def inspect_price_coverage(df: pd.DataFrame) -> float:
     if df.empty or "spot_price_eur_kwh" not in df:
         return 0.0
     return float(df["spot_price_eur_kwh"].notna().mean())
+
+
+import streamlit as st
+
+
+def render_data_quality(quality: DataQuality, coverage: float | None = None) -> None:
+    """Show the evidence behind a result before presenting a tariff recommendation."""
+    label = "Data quality" if st.session_state.get("lang", "de") == "en" else "Datenqualität"
+    with st.expander(label, expanded=not quality.usable):
+        st.caption(quality.message)
+        cols = st.columns(4)
+        cols[0].metric("Rows", f"{quality.rows:,}")
+        cols[1].metric("Resolution", f"{quality.resolution_minutes or '–'} min")
+        cols[2].metric("Duplicates", quality.duplicates)
+        cols[3].metric("Gaps", quality.gaps)
+        if coverage is not None:
+            st.metric("Spot-price coverage", f"{coverage:.0%}")
+
