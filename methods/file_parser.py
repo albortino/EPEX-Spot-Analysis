@@ -31,8 +31,8 @@ class ProviderFormat:
     preprocess_date_func: Optional[str] = None
 
 class JavaScriptNetzbetreiberParser:
-    """Parses the JavaScript netzbetreiber.js from aWATTar backtesting JavaScript file to extract provider configurations."""
-    
+    """Parses Netzbetreiber configurations from aWATTar JavaScript files."""
+
     def __init__(self):
         self.date_format_map = {
             "dd.MM.yyyy HH:mm": "%d.%m.%Y %H:%M",
@@ -41,83 +41,44 @@ class JavaScriptNetzbetreiberParser:
             "dd.MM.yy HH:mm:ss": "%d.%m.%y %H:%M:%S",
             "yyyy-MM-dd HH:mm:ss": "%Y-%m-%d %H:%M:%S",
             " dd.MM.yyyy HH:mm:ss": " %d.%m.%Y %H:%M:%S",
-            "parseISO": "ISO8601"
+            "parseISO": "ISO8601",
         }
-    
+
     def parse_js_file(self, js_content: str) -> List[ProviderFormat]:
-        """
-        Parse JavaScript content and extract Netzbetreiber configurations.
-        """
+        """Extracts Netzbetreiber provider configurations from JavaScript content."""
         providers = []
-        
-        # Pattern to match export const declarations
-        pattern = r"export const (\w+) = new Netzbetreiber\((.*?)\);"
-        matches = re.findall(pattern, js_content, re.DOTALL)
-        
-        for var_name, params_str in matches:
+        pattern = r"export const (\w+) = new Netzbetreiber\((\{.*?\})\);"
+        matches = re.finditer(pattern, js_content, re.DOTALL)
+
+        for match in matches:
+            var_name = match.group(1)
+            obj_str = match.group(2)
             try:
-                provider = self._parse_netzbetreiber_params(var_name, params_str)
+                provider = self._parse_object_literal(var_name, obj_str)
                 if provider:
                     providers.append(provider)
             except Exception as e:
-                logger.log(f"Error parsing JavaScript provider config for '{var_name}': {e}", severity=1)
-                continue
-        
+                logger.log(f"Error parsing provider config for '{var_name}': {e}", severity=1)
+
         return providers
-    
-    def _parse_netzbetreiber_params(self, var_name: str, params_str: str) -> Optional[ProviderFormat]:
-        """
-        Parse individual Netzbetreiber constructor parameters.
-        """
-        # Clean up the parameters string
-        params_str = params_str.strip()
-        
-        # Split parameters - this is complex due to nested functions and arrays
-        params = self._split_parameters(params_str)
-        
-        if len(params) < 6:
+
+    def _parse_object_literal(self, var_name: str, obj_str: str) -> Optional[ProviderFormat]:
+        """Parses a single JavaScript object literal into a ProviderFormat instance."""
+        name = self._extract_str("name", obj_str) or var_name
+        usage_col = self._extract_str("descriptorUsage", obj_str)
+        timestamp_col = self._extract_str("descriptorTimestamp", obj_str)
+        if not usage_col or not timestamp_col:
             return None
-        
-        # Extract basic parameters
-        name = self._clean_string(params[0])
-        usage_col = self._clean_string(params[1])
-        timestamp_col = self._clean_string(params[2])
-        time_sub_col = self._clean_string(params[3]) if params[3] != "null" else None
-        date_format_js = self._clean_string(params[4])
-        
-        # Convert date format
-        date_format = self.date_format_map.get(date_format_js, date_format_js)
-        
-        # Extract other fields (array)
-        other_cols = []
-        if len(params) > 6 and params[6] != "null":
-            other_cols = self._parse_array(params[6])
-        
-        # Extract should_skip function
-        should_skip_func = None
-        if len(params) > 7 and params[7] != "null":
-            should_skip_func = params[7]
-        
-        # Extract fixup_timestamp
-        fixup_timestamp = False
-        if len(params) > 8:
-            fixup_timestamp = params[8].strip().lower() == "true"
-        
-        # Extract feedin flag
-        feedin = False
-        if len(params) > 9:
-            feedin = params[9].strip().lower() == "true"
-        
-        # Extract end timestamp descriptor
-        end_timestamp_col = None
-        if len(params) > 10 and params[10] != "null":
-            end_timestamp_col = self._clean_string(params[10])
-        
-        # Extract preprocess date function
-        preprocess_date_func = None
-        if len(params) > 11 and params[11] != "null":
-            preprocess_date_func = params[11]
-        
+
+        time_sub_col = self._extract_str("descriptorTimeSub", obj_str)
+        date_format_js = self._extract_str("dateFormatString", obj_str) or self._extract_ident("dateFormatString", obj_str)
+        date_format = self.date_format_map.get(date_format_js, date_format_js) if date_format_js else "%d.%m.%Y %H:%M"
+
+        other_cols = self._extract_list("otherFields", obj_str)
+        fixup_timestamp = self._extract_bool("fixupTimestamp", obj_str, default=False)
+        feedin = self._extract_bool("feedin", obj_str, default=False)
+        end_timestamp_col = self._extract_str("endDescriptorTimestamp", obj_str)
+
         return ProviderFormat(
             name=name,
             usage_col=usage_col,
@@ -125,110 +86,33 @@ class JavaScriptNetzbetreiberParser:
             time_sub_col=time_sub_col,
             date_format=date_format,
             other_cols=other_cols,
-            should_skip_func=should_skip_func,
             fixup_timestamp=fixup_timestamp,
             feedin=feedin,
             end_timestamp_col=end_timestamp_col,
-            preprocess_date_func=preprocess_date_func
         )
-    
-    def _split_parameters(self, params_str: str) -> List[str]:
-        """Split parameters while respecting nested structures."""
-        params = []
-        current_param = ""
-        paren_depth = 0
-        bracket_depth = 0
-        in_string = False
-        string_char = None
 
-        i = 0
-        while i < len(params_str):
-            char = params_str[i]
-            
-            if char == "\\": # Escape character
-                    i += 1
-                    continue
-                
-            if not in_string:
-                if char in ["'", '"']: # Within apostrophes
-                    in_string = True
-                    string_char = char
-                    i += 1
-                    continue
-                elif char == "(": # Within parentheses
-                    paren_depth += 1
-                elif char == ")":
-                    paren_depth -= 1
-                elif char == "[": # Within brackets
-                    bracket_depth += 1
-                elif char == "]":
-                    bracket_depth -= 1
-                elif char == "," and paren_depth == 0 and bracket_depth == 0:
-                    params.append(current_param.strip())
-                    current_param = ""
-                    i += 1
-                    continue
-            else:
-                if char == string_char: # and (i == 0 or params_str[i-1] != "\\")
-                    in_string = False
-                    string_char = None
-                    i += 1
-                    continue
-            
-            current_param += char
-            i += 1
+    def _extract_str(self, key: str, text: str) -> Optional[str]:
+        """Extracts a quoted string property value by key."""
+        m = re.search(rf"{key}\s*:\s*[\"']([^\"']+)[\"']", text)
+        return m.group(1).strip() if m else None
 
-        if current_param.strip():
-            params.append(current_param.strip())
-    
-        return params
-    
-    def _clean_string(self, s: str) -> str:
-        """Clean a string parameter by removing quotes."""
-        s = s.strip()
-        # Following is irrelevant
-        #if s.startswith("'") and s.endswith("'"):
-        #    return s[1:-1]
-        #if s.startswith('"') and s.endswith('"'):
-        #    return s[1:-1]
-        return s
-    
-    def _parse_array(self, array_str: str) -> List[str]:
-        """Parse a JavaScript array string. """
-        array_str = array_str.strip()
-        if not (array_str.startswith("[") and array_str.endswith("]")):
+    def _extract_ident(self, key: str, text: str) -> Optional[str]:
+        """Extracts an unquoted identifier property value by key."""
+        m = re.search(rf"{key}\s*:\s*(\w+)", text)
+        return m.group(1).strip() if m else None
+
+    def _extract_bool(self, key: str, text: str, default: bool = False) -> bool:
+        """Extracts a boolean property value by key."""
+        m = re.search(rf"{key}\s*:\s*(true|false)", text, re.IGNORECASE)
+        return m.group(1).lower() == "true" if m else default
+
+    def _extract_list(self, key: str, text: str) -> List[str]:
+        """Extracts a list of strings property value by key."""
+        m = re.search(rf"{key}\s*:\s*\[(.*?)\]", text, re.DOTALL)
+        if not m:
             return []
-        
-        content = array_str[1:-1].strip()
-        if not content:
-            return []
-        
-        items = []
-        current_item = ""
-        in_string = False
-        string_char = None
-        
-        for char in content:
-            if not in_string:
-                if char in [""", """]:
-                    in_string = True
-                    string_char = char
-                elif char == ",":
-                    if current_item.strip():
-                        items.append(self._clean_string(current_item.strip()))
-                    current_item = ""
-                    continue
-            else:
-                if char == string_char:
-                    in_string = False
-                    string_char = None
-            
-            current_item += char
-        
-        if current_item.strip():
-            items.append(self._clean_string(current_item.strip()))
-        
-        return items
+        items = [s.strip(" \"'\t\r\n") for s in m.group(1).split(",")]
+        return [item for item in items if item]
 
 class ConsumptionDataParser:
     """Parser that can load configurations from JavaScript (awattar backtesting) and parse various formats of electricity consumption data. """
@@ -374,7 +258,7 @@ class ConsumptionDataParser:
         df.columns = df.columns.str.strip()
         
         # Check required columns
-        required_cols = [config.timestamp_col] + config.other_cols #type: ignore
+        required_cols = [config.timestamp_col] + (config.other_cols if config.other_cols else [])
         if config.time_sub_col:
             required_cols.append(config.time_sub_col)
         if config.end_timestamp_col:

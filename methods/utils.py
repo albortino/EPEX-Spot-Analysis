@@ -31,26 +31,27 @@ def get_min_max_date(df: pd.DataFrame, today_as_max: bool = TODAY_IS_MAX_DATE) -
     return min_val_date, max_val_date
 
 def get_intervals_per_day(df: pd.DataFrame) -> int:
-    """Calculates the most frequent number of data intervals per day."""
-    if df.empty:
-        return 24 # Default to hourly if no data
-    
-    # Ensure a date column exists for grouping
-    if "date" not in df.columns:
-        df_temp = df.copy()
-        if "timestamp" in df.columns:
-            df_temp["date"] = df_temp["timestamp"].dt.date
-        elif "ds" in df.columns:
-            df_temp["date"] = df_temp["ds"].dt.date
-        else:
-            raise KeyError("No date column provided")
-            
-    else:
-        df_temp = df
+    """Calculates the number of data intervals per day based on timestamp frequency."""
+    if df.empty or len(df) < 2:
+        return 24
 
-    # Calculate the mode of interval counts per day
-    intervals = df_temp.groupby("date").size().mode()
-    return intervals.iloc[0] if not intervals.empty else 24
+    ts_col = "timestamp" if "timestamp" in df.columns else ("ds" if "ds" in df.columns else None)
+    if ts_col is not None:
+        diffs = df[ts_col].sort_values().diff().dropna()
+        positive_diffs = diffs[diffs > pd.Timedelta(0)]
+        if not positive_diffs.empty:
+            median_delta = positive_diffs.median()
+            total_seconds = median_delta.total_seconds()
+            if total_seconds > 0:
+                intervals = int(round(86400 / total_seconds))
+                if intervals > 0:
+                    return intervals
+
+    if "date" in df.columns:
+        intervals = df.groupby("date").size().mode()
+        return int(intervals.iloc[0]) if not intervals.empty else 24
+
+    return 24
 
 def get_aggregation_config(df: pd.DataFrame, resolution: str) -> dict:
     """Returns the aggregation configuration based on the selected resolution."""
@@ -63,20 +64,18 @@ def get_aggregation_config(df: pd.DataFrame, resolution: str) -> dict:
     config = resolution_config[resolution]
     return config
 
-def calculate_granular_data(df: pd.DataFrame) -> bool:
+def has_granular_resolution(df: pd.DataFrame) -> bool:
     """
     Check if data is granular enough for a meaningful flexible cost comparison.
-    This is true for hourly or 15-min data, but not for daily data resampled to hourly.
+    Returns True for hourly or 15-min data, but False for daily data resampled to hourly.
     """
     non_zero_consumption_df = df[df['consumption_kwh'] > 0.001]
-    is_granular_data = True
+    is_granular = True
     if not non_zero_consumption_df.empty:
-        # If all non-zero consumption occurs only at midnight, it's likely daily data
-        # that has been resampled, making a flexible cost comparison misleading.
         if (non_zero_consumption_df['timestamp'].dt.hour == 0).all():
-            is_granular_data = False
-            
-    return is_granular_data
+            is_granular = False
+
+    return is_granular
 
 @st.cache_data(ttl=3600)
 def filter_dataframe(df: pd.DataFrame, start_date: date, end_date: date):

@@ -9,7 +9,7 @@ import io
 from methods.i18n import t
 from methods.config import *
 from methods.tariffs import Tariff, TariffManager, TariffType
-from methods.utils import to_excel, get_intervals_per_day, get_aggregation_config, calculate_granular_data, get_min_max_date, DataQuality
+from methods.utils import to_excel, get_intervals_per_day, get_aggregation_config, has_granular_resolution, get_min_max_date, DataQuality
 import methods.charts as charts
 from methods.logger import logger
 
@@ -278,8 +278,8 @@ def render_recommendation(df: pd.DataFrame, flex_tariff: Tariff, static_tariff: 
     logger.log("Rendering Recommendation")
     from methods.analysis import compute_peak_timing_score
 
-    is_granular_data = calculate_granular_data(df)
-    if not is_granular_data:
+    is_granular = has_granular_resolution(df)
+    if not is_granular:
         st.warning(t("recommendation_only_for_granular_data"))
         return
 
@@ -348,7 +348,7 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     col3.metric(t("avg_consumption_per_month_metric"), f"{avg_month_kwh:,.1f} kWh")
     col4.metric(t("estimated_consumption_per_year_metric"), f"{int(round(est_year_kwh)):,} kWh")
 
-    if calculate_granular_data(df):
+    if has_granular_resolution(df):
         score = compute_peak_timing_score(df)
         col5.metric(t("peak_timing_score_metric"), f"{score:.0%}", help=t("peak_timing_score_help"))
 
@@ -366,13 +366,13 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     st.subheader(t("avg_price_per_kwh_header"))
     st.markdown(t("avg_price_per_kwh_markdown"))
     df_summary = compute_cost_comparison_data(df, "Monthly") # Always use monthly for this overview chart
-    is_granular_data = calculate_granular_data(df)
+    is_granular = has_granular_resolution(df)
     if not df_summary.empty:
         df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
-        if is_granular_data:
+        if is_granular:
             df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
         
-        avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular_data)
+        avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular)
         st.plotly_chart(avg_price_fig, config={"width": "stretch"}, key="basic_avg_price_chart")
 
     # 3. Daily Usage
@@ -406,7 +406,7 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     render_cost_comparison_tab(df, mode="basic")
     
 # --- Tab: Cost Comparison ---
-def _display_summary_table(df_summary: pd.DataFrame, is_granular_data: bool):
+def _display_summary_table(df_summary: pd.DataFrame, is_granular: bool):
     """Helper to display and style the main summary DataFrame with internationalized headers."""
     difference_formatter = lambda v: f"color: {GREEN}" if v > 0 else f"color: {RED}"
 
@@ -434,7 +434,7 @@ def _display_summary_table(df_summary: pd.DataFrame, is_granular_data: bool):
     # Select and rename columns
     df_display = df_summary.rename(columns=col_names)
     
-    if is_granular_data:
+    if is_granular:
         cols_to_show = [col_names[c] for c in ["Period", "Total Consumption", "Total Flexible Cost", "Total Static Cost", "Difference (€)", "Avg. Flex Price", "Avg. Static Price"]]
         styler = df_display[cols_to_show].style
         styler = styler.map(difference_formatter, subset=[col_names["Difference (€)"]])
@@ -446,7 +446,7 @@ def _display_summary_table(df_summary: pd.DataFrame, is_granular_data: bool):
     st.dataframe(styler, hide_index=True, width="stretch")
     return cols_to_show, style_format, difference_formatter
 
-def _compute_col_vals(df: pd.DataFrame, is_granular_data: bool, func, func_name: str) -> pd.DataFrame:
+def _compute_col_vals(df: pd.DataFrame, is_granular: bool, func, func_name: str) -> pd.DataFrame:
     """Computes aggregated column values using the provided function. """
     result = {"Period": func_name}
     
@@ -454,7 +454,7 @@ def _compute_col_vals(df: pd.DataFrame, is_granular_data: bool, func, func_name:
     result["Total Consumption"] = func(df["Total Consumption"])
 
     # Add conditional columns based on data granularity
-    if is_granular_data:
+    if is_granular:
         result["Total Flexible Cost"] = func(df["Total Flexible Cost"])
         result["Total Static Cost"] = func(df["Total Static Cost"])
         result["Difference (€)"] = func(df["Difference (€)"])
@@ -476,8 +476,8 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
     
     logger.log("Rendering Cost Comparison Tab")
 
-    is_granular_data = calculate_granular_data(df)
-    if not is_granular_data:
+    is_granular = has_granular_resolution(df)
+    if not is_granular:
         st.info(t("granular_data_info"))
 
     # In Basic mode, some charts are already shown. Avoid duplication.
@@ -494,17 +494,17 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
         with col1:
             st.subheader(t("total_costs_per_period_header"))
             st.markdown(t("total_costs_per_period_markdown"))
-            total_cost_fig = charts.get_total_cost_chart(df_summary, is_granular_data)
+            total_cost_fig = charts.get_total_cost_chart(df_summary, is_granular)
             st.plotly_chart(total_cost_fig, config={"width": "stretch"})
         with col2:
             st.subheader(t("avg_price_per_kwh_header"))
             st.markdown(t("avg_price_per_kwh_markdown"))
             df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
             
-            if is_granular_data:
+            if is_granular:
                 df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
             
-            avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular_data)
+            avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular)
             st.plotly_chart(avg_price_fig, config={"width": "stretch"})
 
         # Cumulative Savings
@@ -520,17 +520,17 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
     
     # Main DataFrame
     df_summary = compute_cost_comparison_data(df, "Monthly") # Default to monthly for the table
-    cols_to_show, style_format, diff_formatter = _display_summary_table(df_summary, is_granular_data)
+    cols_to_show, style_format, diff_formatter = _display_summary_table(df_summary, is_granular)
 
     # Calculate totals
-    df_totals = _compute_col_vals(df_summary, is_granular_data, sum, t("total_row_label"))
-    df_means = _compute_col_vals(df_summary, is_granular_data, lambda x: x.mean(), t("average_row_label"))
+    df_totals = _compute_col_vals(df_summary, is_granular, sum, t("total_row_label"))
+    df_means = _compute_col_vals(df_summary, is_granular, lambda x: x.mean(), t("average_row_label"))
     df_display = pd.concat([df_totals, df_means], ignore_index=True)
 
     # Style and display the totals DataFrame
     st.text(t("total_and_average_values_text"))
     totals_styler = df_display.rename(columns={col: t(f"col_{col.lower().replace(' (€)', '').replace(' ', '_')}") for col in df_display.columns}).style
-    if is_granular_data:
+    if is_granular:
         totals_styler = totals_styler.map(diff_formatter, subset=[t("col_difference")])
     
     totals_styler = totals_styler.format(style_format)
@@ -550,7 +550,7 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
         df_yearly["Period"] = df_yearly["Period"].astype(str)
 
         # Display the yearly table using the same helper
-        _display_summary_table(df_yearly, is_granular_data)
+        _display_summary_table(df_yearly, is_granular)
 
 
 # --- Tab: Usage Patterns ---

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import List, Dict
 from methods.logger import logger
+from methods.utils import get_intervals_per_day
 
 class TariffType(Enum):
     """Enum to represent the type of tariff."""
@@ -69,21 +70,11 @@ class TariffManager:
         tariffs = {tariff.name: tariff for tariff in self.static_tariffs}
         tariffs["Custom"] = Tariff(name="Custom", type=TariffType.STATIC, price_kwh=0.14, monthly_fee=2.00)
         return tariffs
-    
-    def _get_intervals_per_day(self, df: pd.DataFrame) -> int:
-        """Calculates the number of data intervals per day from the dataframe."""
-    
-        if not "consumption_kwh" in df.columns:
-            raise KeyError("Consumption data is missing.")
-        
-        # Determine the number of entries per day (time resolution)
-        intervals_per_day = df.groupby(df["timestamp"].dt.date).size().mode().iloc[0]
-        return intervals_per_day
         
     def _calculate_static_cost(self, df: pd.DataFrame, tariff: Tariff) -> pd.Series:
         """Calculates the static costs based on a tariff and a dataframe with consumption data."""
         
-        intervals_per_day = self._get_intervals_per_day(df)
+        intervals_per_day = get_intervals_per_day(df)
         days_in_month = df["timestamp"].dt.days_in_month
         
         # Calculate the proportion of the whole monthly fee for every row (=time resultion)
@@ -98,7 +89,7 @@ class TariffManager:
     def _calculate_flexible_cost(self, df: pd.DataFrame, tariff: Tariff) -> pd.Series:
         """Calculate the flexible costs based on a tariff and a dataframe with consumption as well as spot price data."""
         
-        intervals_per_day = self._get_intervals_per_day(df)
+        intervals_per_day = get_intervals_per_day(df)
         days_in_month = df["timestamp"].dt.days_in_month
         
         price_kwh = tariff.price_kwh

@@ -446,14 +446,14 @@ def fit_forecast_model(df: pd.DataFrame) -> tuple[Prophet|None, pd.DataFrame]:
     return model, df_daily
 
 @st.cache_data(ttl=3600)
-def compute_consumption_trend_and_forecast(df: pd.DataFrame, forcast_periods: int = 90):
+def compute_consumption_trend_and_forecast(df: pd.DataFrame, forecast_periods: int = 90):
     """Analyzes and forecasts daily consumption using Prophet."""
     logger.log("Computing Consumption Trend and Forecast with Prophet")
     
     model, df_daily = fit_forecast_model(df)
     if model is None: return None
 
-    future = model.make_future_dataframe(periods=forcast_periods, freq="D")
+    future = model.make_future_dataframe(periods=forecast_periods, freq="D")
     forecast = model.predict(future)
 
     for col in ["yhat", "yhat_lower", "yhat_upper", "trend"]:
