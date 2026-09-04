@@ -183,6 +183,11 @@ def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, str, date, date, str, 
                 st.session_state.date_range_selector = (min_date, max_date)
                 st.rerun()
 
+            curr_range = st.session_state.get("date_range_selector")
+            if isinstance(curr_range, (tuple, list)) and len(curr_range) == 2:
+                if curr_range[0] < min_date or curr_range[1] > max_date or curr_range[0] > max_date:
+                    st.session_state.date_range_selector = (min_date, max_date)
+
             # The `key` parameter is crucial. It links the widget's state to st.session_state
             selected_range = st.date_input(
                 t("date_input_label"),
@@ -362,28 +367,32 @@ def render_basic_dashboard_tab(df: pd.DataFrame, static_tariff: Tariff, base_thr
     price_fig = charts.get_price_chart(df_price, static_tariff.price_kwh)
     st.plotly_chart(price_fig, config={"width": "stretch"}, key="basic_price_chart")
 
-    # 2. Average Price per kWh
-    st.subheader(t("avg_price_per_kwh_header"))
-    st.markdown(t("avg_price_per_kwh_markdown"))
-    df_summary = compute_cost_comparison_data(df, "Monthly") # Always use monthly for this overview chart
-    is_granular = has_granular_resolution(df)
-    if not df_summary.empty:
-        df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
-        if is_granular:
+    # 2. Average Price per kWh (only for granular flexible comparison)
+    is_granular = has_granular_resolution(df) and get_intervals_per_day(df) > 1
+    if is_granular:
+        st.subheader(t("avg_price_per_kwh_header"))
+        st.markdown(t("avg_price_per_kwh_markdown"))
+        df_summary = compute_cost_comparison_data(df, "Monthly") # Always use monthly for this overview chart
+        if not df_summary.empty:
+            df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
             df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
-        
-        avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular)
-        st.plotly_chart(avg_price_fig, config={"width": "stretch"}, key="basic_avg_price_chart")
+            avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular)
+            st.plotly_chart(avg_price_fig, config={"width": "stretch"}, key="basic_avg_price_chart")
 
     # 3. Daily Usage
     st.subheader(t("daily_consumption_header"))
-    st.markdown(t("daily_consumption_markdown"))
     intervals = get_intervals_per_day(df)
-    df_median_spot = compute_price_distribution_data(df, "Hourly")
-    df_consumption_day = compute_consumption_quartiles(df, intervals)
-    if not df_consumption_day.empty:
-        consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals, df_median_spot)
-        st.plotly_chart(consumption_fig, config={"width": "stretch"}, key="basic_consumption_chart")
+    if is_granular:
+        st.markdown(t("daily_consumption_markdown"))
+        df_median_spot = compute_price_distribution_data(df, "Hourly")
+        df_consumption_day = compute_consumption_quartiles(df, intervals)
+        if not df_consumption_day.empty:
+            consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals, df_median_spot)
+            st.plotly_chart(consumption_fig, config={"width": "stretch"}, key="basic_consumption_chart")
+    else:
+        st.markdown(t("daily_consumption_by_type_markdown"))
+        daily_cons_fig = charts.get_daily_consumption_chart(df)
+        st.plotly_chart(daily_cons_fig, config={"width": "stretch"}, key="basic_consumption_chart")
 
     # 4. Usage Profile
     if intervals > 24: # Only for granular data
@@ -489,23 +498,25 @@ def render_cost_comparison_tab(df: pd.DataFrame, mode: str = "expert"):
             st.warning(t("no_data_for_period"))
             return
 
-        col1, col2 = st.columns(2)
-
-        with col1:
+        if is_granular:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader(t("total_costs_per_period_header"))
+                st.markdown(t("total_costs_per_period_markdown"))
+                total_cost_fig = charts.get_total_cost_chart(df_summary, is_granular)
+                st.plotly_chart(total_cost_fig, config={"width": "stretch"})
+            with col2:
+                st.subheader(t("avg_price_per_kwh_header"))
+                st.markdown(t("avg_price_per_kwh_markdown"))
+                df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
+                df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
+                avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular)
+                st.plotly_chart(avg_price_fig, config={"width": "stretch"})
+        else:
             st.subheader(t("total_costs_per_period_header"))
             st.markdown(t("total_costs_per_period_markdown"))
             total_cost_fig = charts.get_total_cost_chart(df_summary, is_granular)
             st.plotly_chart(total_cost_fig, config={"width": "stretch"})
-        with col2:
-            st.subheader(t("avg_price_per_kwh_header"))
-            st.markdown(t("avg_price_per_kwh_markdown"))
-            df_summary["Avg Static Price"] = df_summary["Total Static Cost"] / df_summary["Total Consumption"]
-            
-            if is_granular:
-                df_summary["Avg. Flexible Price"] = df_summary["Total Flexible Cost"] / df_summary["Total Consumption"]
-            
-            avg_price_fig = charts.get_avg_price_chart(df_summary, is_granular)
-            st.plotly_chart(avg_price_fig, config={"width": "stretch"})
 
         # Cumulative Savings
         st.subheader(t("cumulative_savings_header"))
@@ -564,33 +575,39 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
         compute_usage_profile_data, compute_example_day
     )
     
-    # Allow filtering by day type
-    df_filtered = df[df["consumption_kwh"] > 0].copy()
-    day_filter_options = {"All Days": t("all_days"), "Weekdays": t("weekdays"), "Weekends": t("weekends")}
-    day_filter = st.radio(t("filter_by_day_type"), list(day_filter_options.keys()), format_func=lambda x: day_filter_options[x], horizontal=True)
-
-    if day_filter != "All Days":
-        is_weekend = df_filtered["timestamp"].dt.dayofweek >= 5
-        df_filtered = df_filtered[is_weekend if day_filter == "Weekends" else ~is_weekend]
-
-    if df_filtered.empty:
-        st.warning(t("no_data_for_filter", day_filter=day_filter.lower()))
-        return
-        
     intervals = get_intervals_per_day(df)
-    
-    # Consumption Over Time
-    df_consumption_day = compute_consumption_quartiles(df_filtered, intervals)
-    
-    st.subheader(t("consumption_over_time_header"))
-    
-    # Daily Consumption with Quartiles
-    st.markdown(f"#### {t('daily_consumption_header')}\n{t('daily_consumption_markdown')}")
+    is_granular = has_granular_resolution(df)
 
-    if not df_consumption_day.empty:
-        df_median_spot = compute_price_distribution_data(df_filtered, "Hourly")
-        consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals, df_median_spot)
-        st.plotly_chart(consumption_fig, config={"width": "stretch"})
+    if is_granular:
+        # Allow filtering by day type
+        df_filtered = df[df["consumption_kwh"] > 0].copy()
+        day_filter_options = {"All Days": t("all_days"), "Weekdays": t("weekdays"), "Weekends": t("weekends")}
+        day_filter = st.radio(t("filter_by_day_type"), list(day_filter_options.keys()), format_func=lambda x: day_filter_options[x], horizontal=True)
+
+        if day_filter != "All Days":
+            is_weekend = df_filtered["timestamp"].dt.dayofweek >= 5
+            df_filtered = df_filtered[is_weekend if day_filter == "Weekends" else ~is_weekend]
+
+        if df_filtered.empty:
+            st.warning(t("no_data_for_filter", day_filter=day_filter.lower()))
+            return
+
+        st.subheader(t("consumption_over_time_header"))
+        st.markdown(f"#### {t('daily_consumption_header')}\n{t('daily_consumption_markdown')}")
+
+        df_consumption_day = compute_consumption_quartiles(df_filtered, intervals)
+        if not df_consumption_day.empty:
+            df_median_spot = compute_price_distribution_data(df_filtered, "Hourly")
+            consumption_fig = charts.get_consumption_chart(df_consumption_day, intervals, df_median_spot)
+            st.plotly_chart(consumption_fig, config={"width": "stretch"})
+    else:
+        df_filtered = df[df["consumption_kwh"] > 0].copy()
+        day_filter = "All Days"
+
+        st.subheader(t("consumption_over_time_header"))
+        st.markdown(f"#### {t('daily_consumption_header')}\n{t('daily_consumption_by_type_markdown')}")
+        daily_cons_fig = charts.get_daily_consumption_chart(df)
+        st.plotly_chart(daily_cons_fig, config={"width": "stretch"})
         
     # Trend Visualization and Forecast
     try:

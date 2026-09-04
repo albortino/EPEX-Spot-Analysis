@@ -451,7 +451,12 @@ class ConsumptionDataParser:
         # Determine aggregation level
         try:
             intervals_per_day = get_intervals_per_day(df)
-            aggregation_level = "15min" if intervals_per_day > 24 else "h"
+            if intervals_per_day > 24:
+                aggregation_level = "15min"
+            elif intervals_per_day > 1:
+                aggregation_level = "h"
+            else:
+                aggregation_level = "1D"
             logger.log(f"Using aggregation level: {aggregation_level}")
         except Exception as e:
             logger.log(f"Could not determine intervals per day: {e}, defaulting to hourly")

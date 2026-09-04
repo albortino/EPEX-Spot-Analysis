@@ -73,6 +73,7 @@
     "consumption_over_time_header": "Verbrauch im Zeitverlauf",
     "daily_consumption_header": "Täglicher Verbrauch",
     "daily_consumption_markdown": "Dieses Diagramm veranschaulicht deinen Verbrauchs für die ausgewählte Zeitauflösung und vergleicht ihn mit dem Spot-Preis für die jeweilige Stunde. Die durchgezogene Linie stellt den Median-Verbrauch dar, während die gepunkteten Linien das erste und dritte Quartil (25% und 75% des Verbrauchs) zeigen. Wenn der Verbrauch hoch ist und der Preis vergleichsweise niedrig, kann im Regelfall ein Spot-Tarif geeignet sein.",
+    "daily_consumption_by_type_markdown": "Dieses Diagramm veranschaulicht den durchschnittlichen täglichen Verbrauch aufgeteilt nach Wochentagen, Wochenenden sowie dem gesamten Monat.",
     "consumption_trend_forecast_header": "Verbrauchstrend & Prognose",
     "consumption_trend_forecast_markdown": "Dieses Diagramm analysiert den zugrunde liegenden Trend in deinem täglichen Verbrauch mithilfe eines KI-Modells, das saisonale Trends erkennt, und liefert damit eine Prognose für den zukünftigen Verbrauch. Verwende den Schieberegler unten, um den Prognosezeitraum anzupassen.\n**Wichtig**: Entferne **Abwesenheitstage** in der Seitenleiste für robustere Vorhersagen!",
     "forecast_slider_label": "Tage für Prognose",

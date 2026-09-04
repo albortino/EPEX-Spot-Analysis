@@ -1,6 +1,6 @@
 import pandas as pd
 import io
-from datetime import date, timedelta
+from datetime import date
 import streamlit as st
 from methods.config import MIN_DATE, TODAY_IS_MAX_DATE
 from dataclasses import dataclass
@@ -69,6 +69,8 @@ def has_granular_resolution(df: pd.DataFrame) -> bool:
     Check if data is granular enough for a meaningful flexible cost comparison.
     Returns True for hourly or 15-min data, but False for daily data resampled to hourly.
     """
+    if get_intervals_per_day(df) <= 1:
+        return False
     non_zero_consumption_df = df[df['consumption_kwh'] > 0.001]
     is_granular = True
     if not non_zero_consumption_df.empty:

@@ -86,21 +86,87 @@ def get_consumption_chart(df: pd.DataFrame, intervals_per_day: int, df_median_sp
     fig.add_trace(go.Scatter(x=idx, y=df_plot["Consumption Median"], mode="lines", line=dict(color=PERSONAL_DATA_COLOR, width=3), name=t("consumption_median_trace")))
     fig.add_trace(go.Scatter(x=idx, y=df_plot["Consumption Q1"], mode="lines", line=dict(dash="dot", color=PERSONAL_DATA_COLOR_LIGHT), name=t("consumption_q1_trace")))
 
-    # Add Median Spot Price on a secondary y-axis
-    fig.add_trace(go.Scatter(
-        x=df_median_spot_price.index,
-        y=df_median_spot_price["Spot Price Median"],
-        name="Median Spot Price",
-        mode="lines",
-        line=dict(color=FLEX_COLOR, width=2),
-        yaxis="y2"
-    ))
+    # Add Median Spot Price on a secondary y-axis if provided
+    has_spot = df_median_spot_price is not None and not df_median_spot_price.empty
+    if has_spot:
+        fig.add_trace(go.Scatter(
+            x=df_median_spot_price.index,
+            y=df_median_spot_price["Spot Price Median"],
+            name="Median Spot Price",
+            mode="lines",
+            line=dict(color=FLEX_COLOR, width=2),
+            yaxis="y2"
+        ))
 
     yaxis_title = t("consumption_kwh_y_axis", interval_text=_get_interval_text(intervals_per_day, t)).strip()
 
-    fig.update_layout(xaxis_title=idx.name, yaxis_title=yaxis_title, legend_title_text=t("legend_metrics"), hovermode="x unified",
-                      yaxis2=dict(title=t("spot_price_kwh_y_axis"), overlaying="y", side="right", showgrid=False, zeroline=False))
+    layout_kwargs = dict(
+        xaxis_title=idx.name,
+        yaxis_title=yaxis_title,
+        legend_title_text=t("legend_metrics"),
+        hovermode="x unified"
+    )
+    if has_spot:
+        layout_kwargs["yaxis2"] = dict(
+            title=t("spot_price_kwh_y_axis"),
+            overlaying="y",
+            side="right",
+            showgrid=False,
+            zeroline=False
+        )
 
+    fig.update_layout(**layout_kwargs)
+    return fig
+
+
+def get_daily_consumption_chart(df: pd.DataFrame) -> go.Figure:
+    """Shows average daily consumption comparing weekdays, weekends, and monthly overall."""
+    fig = go.Figure()
+    df_plot = df.copy()
+    ts = df_plot["timestamp"] if "timestamp" in df_plot.columns else df_plot.index
+
+    df_plot["month"] = ts.dt.strftime("%Y-%m")
+    df_plot["is_weekend"] = ts.dt.dayofweek >= 5
+
+    weekday_mean = df_plot[~df_plot["is_weekend"]].groupby("month")["consumption_kwh"].mean()
+    weekend_mean = df_plot[df_plot["is_weekend"]].groupby("month")["consumption_kwh"].mean()
+    all_mean = df_plot.groupby("month")["consumption_kwh"].mean()
+
+    all_months = sorted(df_plot["month"].unique())
+
+    fig.add_trace(go.Scatter(
+        x=all_months,
+        y=[weekday_mean.get(m, None) for m in all_months],
+        mode="lines+markers",
+        name=t("weekdays"),
+        line=dict(color=PERSONAL_DATA_COLOR, width=3),
+        marker=dict(size=7)
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=all_months,
+        y=[weekend_mean.get(m, None) for m in all_months],
+        mode="lines+markers",
+        name=t("weekends"),
+        line=dict(color=FLEX_COLOR, width=3),
+        marker=dict(size=7)
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=all_months,
+        y=[all_mean.get(m, None) for m in all_months],
+        mode="lines+markers",
+        name=t("all_days"),
+        line=dict(color=STATIC_COLOR, width=2, dash="dash"),
+        marker=dict(size=6)
+    ))
+
+    fig.update_layout(
+        xaxis_title=t("col_period"),
+        yaxis_title=f"{t('col_total_consumption')} (Ø kWh/Tag)",
+        legend_title_text=t("legend_metrics"),
+        hovermode="x unified"
+    )
     return fig
 
 def get_marimekko_chart(df: pd.DataFrame, border_color: str = "#FFFFFF") -> go.Figure:

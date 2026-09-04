@@ -77,6 +77,7 @@
     "consumption_over_time_header": "Consumption Over Time",
     "daily_consumption_header": "Daily Consumption",
     "daily_consumption_markdown": "This chart illustrates the statistical distribution of your consumption for the selected time resolution. The solid line represents the median consumption, while the dotted lines show the first and third Quartile.",
+    "daily_consumption_by_type_markdown": "This chart illustrates your average daily consumption comparing weekdays, weekends, and monthly overall.",
     "consumption_trend_forecast_header": "Consumption Trend & Forecast",
     "consumption_trend_forecast_markdown": "This chart analyzes the underlying trend in your daily consumption using a seasonal model and provides a forecast for future usage. Use the slider below to adjust the forecast period.\n**Important**: Consider **excluding days of absence** in the sidebar for more robust predictions!",
     "forecast_slider_label": "Days to Forecast",

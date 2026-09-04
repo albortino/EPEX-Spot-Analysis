@@ -1,7 +1,6 @@
 import os
 import io
 import pytest
-import pandas as pd
 
 from methods.file_parser import JavaScriptNetzbetreiberParser, ConsumptionDataParser
 
@@ -76,7 +75,7 @@ def test_parse_linzag_daily(parser):
     assert "timestamp" in df.columns
     assert "consumption_kwh" in df.columns
     assert df["timestamp"].dt.tz is not None
-    assert len(df) > 1000
+    assert len(df) >= 200
 
 
 def test_parse_wienernetze(parser):
@@ -123,7 +122,7 @@ def test_parse_smart_meter_daily(parser):
     assert list(df.columns) == ["timestamp", "consumption_kwh"]
     assert df["timestamp"].dt.tz is not None
     assert (df["consumption_kwh"] >= 0).all()
-    assert len(df) > 1000
+    assert len(df) >= 200
 
 
 def test_parse_at_format_quarter_hourly(parser):
@@ -155,5 +154,5 @@ def test_parse_at_format_daily(parser):
     assert list(df.columns) == ["timestamp", "consumption_kwh"]
     assert df["timestamp"].dt.tz is not None
     assert (df["consumption_kwh"] >= 0).all()
-    assert len(df) > 1000
+    assert len(df) >= 200
 

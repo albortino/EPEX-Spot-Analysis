@@ -382,19 +382,20 @@ def compute_usage_profile_data(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(profile_data)
 
 @st.cache_data(ttl=3600)
-def compute_consumption_quartiles(df: pd.DataFrame, intervals_per_day: int) -> pd.DataFrame:
+def compute_consumption_quartiles(df: pd.DataFrame, intervals_per_day: int, resolution: str = "Hourly") -> pd.DataFrame:
     """Computes and caches the usage data for the selected resolution."""
     logger.log("Computing Consumption Data")
     df_agg = df.copy()
 
     # If data is more granular than hourly, resample to hourly sums first.
-    if intervals_per_day > 24:
+    if intervals_per_day > 24 and resolution == "Hourly":
         df_agg = df_agg.set_index('timestamp').resample('h').agg({
             'consumption_kwh': 'sum'
         }).reset_index()
     
     consumption_agg_dict = { "consumption_kwh": [ ("q1", lambda x: x.quantile(0.25)), ("median", "median"), ("q3", lambda x: x.quantile(0.75)) ] }
-    resolution = "Hourly" if intervals_per_day > 1 else "Daily" # Simplified logic
+    if intervals_per_day <= 1 and resolution == "Hourly":
+        resolution = "Monthly"
     
     config = get_aggregation_config(df_agg, resolution)
     df_consumption_quartiles = df_agg.dropna(subset=["consumption_kwh"]).groupby(config["grouper"]).agg(consumption_agg_dict)
