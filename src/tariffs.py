@@ -150,12 +150,15 @@ class TimeVariableTariff(Tariff):
         is_summer = months.isin([4, 5, 6, 7, 8, 9])
         is_sun_window = (hours >= 10) & (hours < 16)
 
+        # Write summertime regular price from April to September, 
+        # and wintertime regular price from October to March.
         prices = pd.Series(
             np.where(is_summer, self.summer_regular_price, self.winter_regular_price),
             index=df.index,
             dtype=float,
         )
 
+        # Overwrite with sun prices if available
         if self.summer_sun_price is not None:
             prices = prices.mask(is_summer & is_sun_window, self.summer_sun_price)
         if self.winter_sun_price is not None:

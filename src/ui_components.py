@@ -367,11 +367,16 @@ def render_absence_days(df: pd.DataFrame, base_threshold: float, absence_thresho
     with st.sidebar:
         absence_days = compute_absence_data(df, base_threshold, absence_threshold)
         if absence_days:
+            def _on_toggle_absence_all():
+                if st.session_state.get("absence_select_all"):
+                    st.session_state["absence_multiselect"] = list(absence_days)
+                else:
+                    st.session_state["absence_multiselect"] = []
+
             with st.expander(t("remove_absence_days"), expanded=False):
                 st.text(t("remove_absence_days_help", count=len(absence_days)), help=t("remove_absence_days_long_help", threshold=absence_threshold))
-                select_all = st.checkbox(t("exclude_all_days_checkbox"), value=False, key="absence_select_all")
-                default_selection = absence_days if select_all else []
-                excluded_days = st.multiselect(t("multiselect_excluded_days"), options=absence_days, default=default_selection, key="absence_multiselect")
+                st.checkbox(t("exclude_all_days_checkbox"), value=False, key="absence_select_all", on_change=_on_toggle_absence_all)
+                excluded_days = st.multiselect(t("multiselect_excluded_days"), options=absence_days, key="absence_multiselect")
 
             if excluded_days:
                 # Filter out the selected absence days
