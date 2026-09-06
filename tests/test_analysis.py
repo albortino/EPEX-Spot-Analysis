@@ -197,3 +197,25 @@ def test_yearly_summary_and_cumulative_chart_titles(multi_day_15m_df):
     chart = get_cumulative_savings_chart(savings_df)
     assert chart.layout.title.text is not None
     assert "vs." in chart.layout.title.text
+
+
+def test_compute_consumption_trend_and_forecast_metrics():
+    """Verify compute_consumption_trend_and_forecast returns extended metrics dict."""
+    from src.analysis import compute_consumption_trend_and_forecast
+    # 35 days of daily timestamps for minimum required Prophet history
+    dates = pd.date_range("2024-01-01", periods=35, freq="D", tz="UTC")
+    df = pd.DataFrame({
+        "timestamp": dates,
+        "consumption_kwh": [10.0] * 35,
+        "total_cost_static": [2.0] * 35
+    })
+    res = compute_consumption_trend_and_forecast(df, forecast_periods=10)
+    assert res is not None
+    df_daily, forecast, trend_desc, pct_change, metrics = res
+    assert "forecast_total_kwh" in metrics
+    assert "forecast_avg_kwh" in metrics
+    assert "diff_kwh" in metrics
+    assert "estimated_cost" in metrics
+    assert metrics["forecast_total_kwh"] > 0
+    assert metrics["estimated_cost"] > 0
+

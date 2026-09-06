@@ -818,40 +818,71 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
             st.info("Forecasting is only available when 'All Days' are selected.")
         else:
             st.markdown(t("consumption_trend_forecast_markdown"))
-            col1, _, _, col2 = st.columns(4) # Use 4 columns such that the metric is on the very right of the screen.
-
             # Configuration for the forecast.
-            with col1:
-                days_in_dataset = (df_filtered["timestamp"].max() - df_filtered["timestamp"].min()).days
+            days_in_dataset = (df_filtered["timestamp"].max() - df_filtered["timestamp"].min()).days
 
-                # Set the default value for the slider based on the number of days in the dataset
-                max_value = 365
-                if days_in_dataset < 90:
-                    value = 30
+            # Set the default value for the slider based on the number of days in the dataset
+            max_value = 365
+            if days_in_dataset < 90:
+                value = 30
+            elif days_in_dataset < 365:
+                value = 90
+            else:
+                value = 180
+                max_value = 365*2
 
-                elif days_in_dataset < 365:
-                    value = 90
-                else:
-                    value = 180
-                    max_value = 365*2
-
-                forecast_days = st.slider(t("forecast_slider_label"), min_value=30, max_value=max_value, value=value, step=10, key="forecast_days", width=300)
+            forecast_days = st.slider(t("forecast_slider_label"), min_value=30, max_value=max_value, value=value, step=10, key="forecast_days", width=300)
 
             # Calculation the trend data. The fitted model is cached such that only the forecast is recomputed (efficient!).
             trend_data = compute_consumption_trend_and_forecast(df_filtered, forecast_days)
 
             # Display Results
             if trend_data:
-                df_daily_trend, df_forecast, trend_description, trend_metric = trend_data
+                df_daily_trend, df_forecast, trend_description, trend_metric, metrics = trend_data
                 model, _ = fit_forecast_model(df_filtered)  # We need the model for the components
 
-                # Display the summary metric first, as a key insight
-                with col2:
-                    st.metric(label=t("underlying_consumption_trend_label"),
-                            value=trend_description,
-                            delta=f"{trend_metric:.1f}% change over period",
-                            delta_color=("inverse" if trend_metric < 0 else "normal"),
-                            label_visibility="hidden")
+                # Metric cards side-by-side
+                m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+                with m_col1:
+                    st.metric(
+                        label=t("forecast_total_consumption_label"),
+                        value=f"{metrics['forecast_total_kwh']:,.1f} kWh"
+                    )
+
+                with m_col2:
+                    delta_label = (
+                        t("forecast_delta_past_year")
+                        if metrics["baseline_type"] == "same_period_last_year"
+                        else t("forecast_delta_past_period", days=forecast_days)
+                    )
+                    diff_sign = "+" if metrics["diff_kwh"] >= 0 else ""
+                    st.metric(
+                        label=t("forecast_avg_daily_label"),
+                        value=f"{metrics['forecast_avg_kwh']:.2f} kWh",
+                        delta=f"{diff_sign}{metrics['diff_kwh']:,.1f} kWh ({diff_sign}{metrics['diff_percent']:.1f}%) {delta_label}",
+                        delta_color="inverse" if metrics["diff_kwh"] > 0 else "normal"
+                    )
+
+                with m_col3:
+                    if metrics["estimated_cost"] > 0:
+                        st.metric(
+                            label=t("forecast_estimated_cost_label"),
+                            value=f"{metrics['estimated_cost']:,.2f} €",
+                            help=f"~{metrics['unit_price']:.3f} €/kWh"
+                        )
+                    else:
+                        st.metric(
+                            label=t("forecast_estimated_cost_label"),
+                            value="–"
+                        )
+
+                with m_col4:
+                    st.metric(
+                        label=t("underlying_consumption_trend_label"),
+                        value=trend_description,
+                        delta=f"{trend_metric:.1f}%",
+                        delta_color="inverse" if trend_metric < 0 else "normal"
+                    )
 
                 # Display the detailed chart
                 trend_fig = charts.get_trend_chart(df_daily_trend, df_forecast)

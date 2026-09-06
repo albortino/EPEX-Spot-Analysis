@@ -503,7 +503,68 @@ def compute_consumption_trend_and_forecast(df: pd.DataFrame, forecast_periods: i
     elif percent_change > 0: trend_description = "Increasing"
     else: trend_description = "Decreasing"
 
-    return df_daily, forecast, trend_description, percent_change
+    # Future forecast metrics
+    future_forecast = forecast.tail(forecast_periods)
+    forecast_total_kwh = float(future_forecast["yhat"].sum())
+    forecast_avg_kwh = float(future_forecast["yhat"].mean()) if forecast_periods > 0 else 0.0
+
+    # Comparison baseline: same period last year (if >= 1 year history available), else preceding N days
+    df_valid_daily = df_daily.dropna(subset=["y"]).copy()
+    past_total_kwh = 0.0
+    past_avg_kwh = 0.0
+    baseline_type = "prior_period"
+
+    if not df_valid_daily.empty and len(future_forecast) > 0:
+        forecast_start = future_forecast["ds"].min()
+        forecast_end = future_forecast["ds"].max()
+        last_year_start = forecast_start - pd.DateOffset(years=1)
+        last_year_end = forecast_end - pd.DateOffset(years=1)
+
+        mask_last_year = (df_valid_daily["ds"] >= last_year_start) & (df_valid_daily["ds"] <= last_year_end)
+        df_last_year = df_valid_daily[mask_last_year]
+
+        # Use last year if we have at least 80% coverage of the period
+        if len(df_last_year) >= max(1, int(forecast_periods * 0.8)):
+            past_total_kwh = float(df_last_year["y"].sum())
+            past_avg_kwh = float(df_last_year["y"].mean())
+            baseline_type = "same_period_last_year"
+        else:
+            # Preceding N days from the historical dataset
+            df_preceding = df_valid_daily.tail(forecast_periods)
+            if not df_preceding.empty:
+                past_total_kwh = float(df_preceding["y"].sum())
+                past_avg_kwh = float(df_preceding["y"].mean())
+                baseline_type = "prior_period"
+
+    diff_kwh = forecast_total_kwh - past_total_kwh
+    diff_percent = (diff_kwh / past_total_kwh) * 100 if past_total_kwh > 0 else 0.0
+
+    # Unit price estimation from existing tariffs or spot price in df
+    total_consumption = df["consumption_kwh"].sum() if "consumption_kwh" in df.columns else 0.0
+    unit_price = 0.0
+    if total_consumption > 0:
+        for cost_col in ["total_cost_flexible", "total_cost_static", "total_cost_variable", "total_cost_spot", "total_cost_fixed"]:
+            if cost_col in df.columns and df[cost_col].sum() > 0:
+                unit_price = float(df[cost_col].sum() / total_consumption)
+                break
+    if unit_price == 0.0 and "spot_price_eur_kwh" in df.columns:
+        unit_price = float(df["spot_price_eur_kwh"].mean())
+
+    estimated_cost = forecast_total_kwh * unit_price
+
+    metrics = {
+        "forecast_total_kwh": forecast_total_kwh,
+        "forecast_avg_kwh": forecast_avg_kwh,
+        "past_total_kwh": past_total_kwh,
+        "past_avg_kwh": past_avg_kwh,
+        "diff_kwh": diff_kwh,
+        "diff_percent": diff_percent,
+        "baseline_type": baseline_type,
+        "estimated_cost": estimated_cost,
+        "unit_price": unit_price,
+    }
+
+    return df_daily, forecast, trend_description, percent_change, metrics
 
 @st.cache_data(ttl=3600)
 def compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
