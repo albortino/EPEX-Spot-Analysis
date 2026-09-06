@@ -1027,10 +1027,10 @@ def render_about_tab():
     """Renders the content for the 'About' tab by displaying the readme.md file."""
     st.header("About This Project")
     try:
-        with open("readme.md", "r", encoding="utf-8") as f:
+        with open("README.md", "r", encoding="utf-8") as f:
             st.markdown(f.read(), unsafe_allow_html=True)
     except FileNotFoundError:
-        st.warning("readme.md file not found.")
+        st.warning("README.md file not found.")
 
 
 # --- Footer ---
