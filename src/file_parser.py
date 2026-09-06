@@ -3,6 +3,8 @@ import io
 import re
 import requests
 import os
+import subprocess
+import shutil
 import json
 import pytz
 from typing import List, Optional
@@ -112,8 +114,8 @@ class JavaScriptNetzbetreiberParser:
         m = re.search(rf"{key}\s*:\s*\[(.*?)\]", text, re.DOTALL)
         if not m:
             return []
-        items = [s.strip(" \"'\t\r\n") for s in m.group(1).split(",")]
-        return [item for item in items if item]
+        items = re.findall(r"""["']([^"']+)["']""", m.group(1))
+        return [item.strip() for item in items if item.strip()]
 
 
 class ConsumptionDataParser:
@@ -157,6 +159,7 @@ class ConsumptionDataParser:
         # Combine lists. User formats are first in the list.
         self.provider_formats = user_formats + main_formats
         logger.log(f"Total of {len(self.provider_formats)} provider formats loaded ({len(user_formats)} user-defined, {len(main_formats)} main).")
+        self._ensure_upstream_preprocessor()
 
     def _load_user_defined_formats(self) -> List[ProviderFormat]:
         """Loads user-defined provider formats from own_provider_formats.json."""
@@ -218,6 +221,105 @@ class ConsumptionDataParser:
         except Exception as e:
             raise ValueError(f"Error parsing JavaScript content: {e}") from e
 
+    def _ensure_upstream_preprocessor(self):
+        """Fetches and caches upstream preprocess.js and encoding.js to build runner.js."""
+        try:
+            js_dir = os.path.join(CACHE_FOLDER, "upstream_js")
+            os.makedirs(js_dir, exist_ok=True)
+            prep_file = os.path.join(js_dir, "preprocess.js")
+            enc_file = os.path.join(js_dir, "encoding.js")
+            runner_file = os.path.join(js_dir, "runner.js")
+
+            # Try to fetch upstream files if missing
+            base_url = "https://raw.githubusercontent.com/awattar-backtesting/awattar-backtesting.github.io/main/docs/calc/"
+            for fname, fpath in [("preprocess.js", prep_file), ("encoding.js", enc_file)]:
+                if not os.path.exists(fpath):
+                    try:
+                        resp = requests.get(base_url + fname, timeout=5)
+                        if resp.status_code == 200:
+                            with open(fpath, "w", encoding="utf-8") as f:
+                                f.write(resp.text)
+                    except Exception as e:
+                        logger.log(f"Could not download upstream {fname}: {e}", severity=0)
+
+            # Build self-contained runner.js if preprocess and encoding exist
+            if os.path.exists(prep_file) and os.path.exists(enc_file):
+                with open(enc_file, "r", encoding="utf-8") as f:
+                    enc_code = f.read().replace("export function", "function")
+                with open(prep_file, "r", encoding="utf-8") as f:
+                    prep_code = re.sub(r"import\s+.*?;\s*", "", f.read()).replace("export function", "function")
+
+                runner_code = (
+                    "const fs = require('fs');\n\n"
+                    + enc_code + "\n"
+                    + prep_code + "\n"
+                    + "const buf = fs.readFileSync(0);\n"
+                    + "const stripped = stripPlain(buf);\n"
+                    + "let output;\n"
+                    + "if (typeof stripped === 'string') {\n"
+                    + "    output = stripped;\n"
+                    + "} else if (stripped && stripped.buffer) {\n"
+                    + "    output = bufferToString(stripped);\n"
+                    + "} else if (stripped instanceof ArrayBuffer) {\n"
+                    + "    output = bufferToString(stripped);\n"
+                    + "} else {\n"
+                    + "    output = bufferToString(buf);\n"
+                    + "}\n"
+                    + "output = output.replace(/^\\uFEFF/, '');\n"
+                    + "output = output.replace(/^sep=;[\\r\\n]+/, '');\n"
+                    + "process.stdout.write(output, 'latin1');\n"
+                )
+                with open(runner_file, "w", encoding="utf-8") as f:
+                    f.write(runner_code)
+        except Exception as e:
+            logger.log(f"Error initializing upstream preprocessor: {e}", severity=0)
+
+    def _preprocess_content(self, raw_content: bytes) -> str:
+        """Runs upstream JS stripPlain preprocessing via Node.js if available, with python fallback."""
+        runner_file = os.path.join(CACHE_FOLDER, "upstream_js", "runner.js")
+        if shutil.which("node") and os.path.exists(runner_file):
+            try:
+                proc = subprocess.Popen(
+                    ["node", runner_file],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                out, _ = proc.communicate(input=raw_content, timeout=5)
+                if proc.returncode == 0 and out:
+                    try:
+                        text = out.decode("utf-8-sig")
+                    except UnicodeDecodeError:
+                        text = out.decode("latin-1")
+                    text = text.lstrip("\ufeff")
+                    if text.startswith("sep=;\r\n"):
+                        text = text[7:]
+                    elif text.startswith("sep=;\n"):
+                        text = text[6:]
+                    return text
+            except Exception as e:
+                logger.log(f"Upstream node preprocessor error: {e}, falling back", severity=0)
+
+        # Python fallback if node is not present or failed
+        try:
+            text = raw_content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw_content.decode("latin-1")
+
+        text = text.lstrip("\ufeff")
+        if text.startswith("sep=;\r\n"):
+            text = text[7:]
+        elif text.startswith("sep=;\n"):
+            text = text[6:]
+
+        if all(k in text for k in ["Kundennummer", "Kundenname", "ZP-Nummer", "Energierichtung"]):
+            text = "\n".join(text.splitlines()[8:])
+        tiwag_lines = text.splitlines()
+        if len(tiwag_lines) >= 5 and "DATE_FROM;DATE_TO;VALUE" in tiwag_lines[4]:
+            text = "\n".join(tiwag_lines[4:])
+
+        return text
+
     def parse_file(self, uploaded_file) -> pd.DataFrame:
         """Tries to parse the uploaded file with all available format configurations."""
         if uploaded_file is None:
@@ -228,16 +330,13 @@ class ConsumptionDataParser:
                 raw_content = uploaded_file.getvalue()
             else:
                 raw_content = uploaded_file.read()
-            if isinstance(raw_content, bytes):
-                try:
-                    file_content = raw_content.decode("utf-8-sig")
-                except UnicodeDecodeError:
-                    file_content = raw_content.decode("latin-1")
-            else:
-                file_content = raw_content
+            if isinstance(raw_content, str):
+                raw_content = raw_content.encode("utf-8")
         except Exception as e:
             logger.log(f"Error reading uploaded file: {e}", severity=1)
             return pd.DataFrame()
+
+        file_content = self._preprocess_content(raw_content)
 
         for provider_format in self.provider_formats:
             try:
@@ -503,11 +602,6 @@ class ConsumptionDataParser:
 
 # Example usage
 if __name__ == "__main__":
-    import os
-
-    # Move one directory up
-    print(os.getcwd())
-    os.chdir('..')
 
     # Create parser with default configurations
     parser = ConsumptionDataParser()

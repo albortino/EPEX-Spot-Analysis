@@ -174,8 +174,8 @@
         "time_sub_col": "Startuhrzeit",
         "date_format": "%d.%m.%Y %H:%M",
         "other_cols": [
-            "/*\" Status",
-            "*/\"Enddatum",
+            "Status",
+            "Enddatum",
             "Enduhrzeit"
         ],
         "should_skip_func": null,
@@ -422,8 +422,7 @@
             "Tarif",
             "Verbrauchszeitraum Ende",
             "Einheit",
-            "Messwert: VAL...gemessen",
-            "EST...rechnerisch ermittelt"
+            "Messwert: VAL...gemessen, EST...rechnerisch ermittelt"
         ],
         "should_skip_func": null,
         "fixup_timestamp": false,
@@ -446,8 +445,7 @@
             "Tarif",
             "Statistikzeitraum Ende",
             "Einheit",
-            "Messwert: VAL...gemessen",
-            "EST...rechnerisch ermittelt"
+            "Messwert: VAL...gemessen, EST...rechnerisch ermittelt"
         ],
         "should_skip_func": null,
         "fixup_timestamp": false,
@@ -470,8 +468,7 @@
             "Tarif",
             "Leistungszeitraum Ende",
             "Einheit",
-            "Messwert: VAL...gemessen",
-            "EST...rechnerisch ermittelt"
+            "Messwert: VAL...gemessen, EST...rechnerisch ermittelt"
         ],
         "should_skip_func": null,
         "fixup_timestamp": false,
