@@ -282,9 +282,11 @@ def render_sidebar_inputs(df: pd.DataFrame) -> tuple[str, str, date, date, str, 
                 if curr_range[0] < min_date or curr_range[1] > max_date or curr_range[0] > max_date:
                     st.session_state.date_range_selector = (min_date, max_date)
 
+            if "date_range_selector" not in st.session_state:
+                st.session_state.date_range_selector = (min_date, max_date)
+
             selected_range = st.date_input(
                 t("date_input_label"),
-                value=(min_date, max_date),
                 min_value=min_date,
                 max_value=max_date,
                 format="DD.MM.YYYY",

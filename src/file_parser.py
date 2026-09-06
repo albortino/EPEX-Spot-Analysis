@@ -8,8 +8,8 @@ import pytz
 from typing import List, Optional
 from dataclasses import dataclass, asdict
 from src.config import LOCAL_TIMEZONE, CACHE_FOLDER
-from src.utils import get_intervals_per_day
 from src.logger import logger
+
 
 @dataclass
 class ProviderFormat:
@@ -29,6 +29,7 @@ class ProviderFormat:
     feedin: bool = False
     end_timestamp_col: Optional[str] = None
     preprocess_date_func: Optional[str] = None
+
 
 class JavaScriptNetzbetreiberParser:
     """Parses Netzbetreiber configurations from aWATTar JavaScript files."""
@@ -114,16 +115,20 @@ class JavaScriptNetzbetreiberParser:
         items = [s.strip(" \"'\t\r\n") for s in m.group(1).split(",")]
         return [item for item in items if item]
 
+
 class ConsumptionDataParser:
     """Parser that can load configurations from JavaScript (awattar backtesting) and parse various formats of electricity consumption data. """
 
-    def __init__(self, local_timezone=LOCAL_TIMEZONE, js_url="https://raw.githubusercontent.com/awattar-backtesting/awattar-backtesting.github.io/main/docs/netzbetreiber.js", js_content=None):
+    def __init__(self,
+                 local_timezone=LOCAL_TIMEZONE,
+                 js_url="https://raw.githubusercontent.com/awattar-backtesting/awattar-backtesting.github.io/main/docs/netzbetreiber.js",
+                 js_content=None):
         self.local_timezone = local_timezone
         self.js_parser = JavaScriptNetzbetreiberParser()
         self.cache_file = os.path.join(CACHE_FOLDER, "provider_formats.json")
         self.user_formats_file = os.path.join(CACHE_FOLDER, "additional_provider_formats.json")
 
-        # Load user-defined formats. They are always loaded and take precedence.
+        # Load user-defined formats, they have priority.
         user_formats = self._load_user_defined_formats()
 
         # Load formats from JS, then cache, then defaults.
@@ -235,10 +240,13 @@ class ConsumptionDataParser:
             return pd.DataFrame()
 
         for provider_format in self.provider_formats:
-            df = self._try_parse(io.StringIO(file_content), provider_format)
-            if not df.empty:
-                logger.log(f"Successfully parsed with format: {provider_format.name}", severity=1)
-                return self._standardize_dataframe(df)
+            try:
+                df = self._try_parse(io.StringIO(file_content), provider_format)
+                if not df.empty:
+                    logger.log(f"Successfully parsed with format: {provider_format.name}", severity=1)
+                    return self._standardize_dataframe(df)
+            except Exception as e:
+                logger.log(f"Format {provider_format.name} skipped: {e}", severity=0)
 
         logger.log("No suitable parser found for the uploaded file.", severity=1)
         return pd.DataFrame()
@@ -302,7 +310,7 @@ class ConsumptionDataParser:
 
         # Apply timestamp fixup
         if config.fixup_timestamp:
-             df["timestamp_local"] -= pd.Timedelta(minutes=15)
+            df["timestamp_local"] -= pd.Timedelta(minutes=15)
 
         return df[["timestamp_local", "consumption_kwh"]].dropna()
 
@@ -344,6 +352,8 @@ class ConsumptionDataParser:
     def _standardize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Convert timestamp to UTC and standardize the output format. Handles DST transitions robustly."""
 
+        from src.utils import get_intervals_per_day
+
         def handle_dst_transitions(df: pd.DataFrame, timezone_str: str) -> pd.Series:
             """
             Handle DST transitions by identifying and processing different types of timestamps.
@@ -355,6 +365,7 @@ class ConsumptionDataParser:
             Returns:
                 A pandas Series with timezone-aware UTC timestamps.
             """
+
             timezone = pytz.timezone(timezone_str)
             utc_timestamps = []
 
@@ -460,10 +471,10 @@ class ConsumptionDataParser:
         # Resample data
         try:
             df_resampled = (df.set_index("timestamp")["consumption_kwh"]
-                        .resample(aggregation_level)
-                        .sum()
-                        .dropna()
-                        .reset_index())
+                            .resample(aggregation_level)
+                            .sum()
+                            .dropna()
+                            .reset_index())
 
             # Ensure we have the expected columns
             df_result = df_resampled[["timestamp", "consumption_kwh"]].reset_index(drop=True)
@@ -492,6 +503,11 @@ class ConsumptionDataParser:
 
 # Example usage
 if __name__ == "__main__":
+    import os
+
+    # Move one directory up
+    print(os.getcwd())
+    os.chdir('..')
 
     # Create parser with default configurations
     parser = ConsumptionDataParser()

@@ -14,7 +14,7 @@ st.set_page_config(layout="wide")
 def main():
    
     # Instantiate managers once
-    tariff_manager = TariffManager("resources/tariffs_flexible.json", "resources/tariffs_static.json")
+    tariff_manager = TariffManager("resources/tariffs_spot.json", "resources/tariffs_fixed.json")
 
     # --- File Upload and Initial Data Processing ---
     uploaded_file = ui.render_upload_file()

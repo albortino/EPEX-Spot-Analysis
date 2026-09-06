@@ -7,6 +7,7 @@ from datetime import datetime, date, time
 from zoneinfo import ZoneInfo
 from src.config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, CACHE_FOLDER
 from src.file_parser import ConsumptionDataParser
+from src.i18n import t
 from src.logger import logger
 
 # --- Spot Price Data Handling ---
@@ -107,12 +108,12 @@ def process_consumption_data(uploaded_file) -> pd.DataFrame:
         parser = ConsumptionDataParser(local_timezone=LOCAL_TIMEZONE)
         df = parser.parse_file(uploaded_file)
         if df.empty:
-            st.error("Could not parse the CSV file. Please ensure it is from a supported provider or in the default format.")
+            st.info(t("upload_format_unsupported"), icon="ℹ️")
         return df.convert_dtypes()
     except Exception as e:
         error_id = datetime.now().strftime("%Y%m%d%H%M%S")
         logger.log(f"Upload parsing error {error_id}: {e}", severity=1)
-        st.error(f"The file could not be processed (reference {error_id}).")
+        st.info(t("upload_format_unsupported"), icon="ℹ️")
         return pd.DataFrame()
 
 # --- Data Merging ---

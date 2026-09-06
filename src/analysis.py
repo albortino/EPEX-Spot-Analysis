@@ -4,7 +4,7 @@ import numpy as np
 from prophet import Prophet
 
 from src.utils import get_intervals_per_day, get_min_max_date, get_aggregation_config
-from src.config import NEGLIGABLE_KWH, BASE_QUANTILE_THRESHOLD, PEAK_QUANTILE_THRESHOLD, STD_MULTIPLE, THRESHOLD_STABLE_TREND, TODAY_IS_MAX_DATE, LOCAL_TIMEZONE, FFT_BASE_HARMONICS, OVERNIGHT_HOURS, PEAK_SUSTAIN_INTERVALS
+from src.config import NEGLIGABLE_KWH, THRESHOLD_STABLE_TREND, TODAY_IS_MAX_DATE, LOCAL_TIMEZONE, FFT_BASE_HARMONICS, OVERNIGHT_HOURS, OVERNIGHT_ANCHOR, PEAK_SUSTAIN_INTERVALS, PEAK_QUANTILE_THRESHOLD, STD_MULTIPLE
 from src.tariffs import Tariff, TariffManager
 import src.data_loader as data_loader
 from src.logger import logger
@@ -27,7 +27,7 @@ def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame,
          the high-usage sustain threshold (catches kettles, ovens switching on).
       B) Sustained amplitude: residual stays above the sustain threshold for at least
          PEAK_SUSTAIN_INTERVALS consecutive intervals without a trigger (catches EV
-         chargers, oven bake sessions with gradual onset).
+         chargers, oven bake sessions with gradual onset, TV, homeoffice).
 
     During peak intervals the existing re-attribution step carves back an estimate of
     the underlying regular load so all three buckets are always consistent.
@@ -39,43 +39,38 @@ def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame,
     df_c = df.copy()
     df_local = df_c.copy()
     df_local["timestamp_local"] = df_local["timestamp"].dt.tz_convert(local_timezone)
-    intervals_per_day = get_intervals_per_day(df_local)
 
     # --- Step 1: Per-day FFT base signal extraction ---
-    # For each calendar day, keep only the DC component + FFT_BASE_HARMONICS low
-    # harmonics. This reconstructs the slow always-on floor for that day.
+    # For each calendar day, keep only the DC component + FFT_BASE_HARMONICS low harmonics.
+    # This reconstructs the slow always-on floor for that day.
     df_local["date"] = df_local["timestamp_local"].dt.date
     base_signal_parts = []
 
     for day, group in df_local.groupby("date", sort=True):
-        y = group["consumption_kwh"].values.astype(float)
-        n = len(y)
+        consumption = group["consumption_kwh"].values.astype(float)
+        n = len(consumption)
         if n < 2:
-            base_signal_parts.append(pd.Series(y, index=group.index))
+            base_signal_parts.append(pd.Series(consumption, index=group.index))
             continue
 
-        coeffs = np.fft.rfft(y)
+        coeffs = np.fft.rfft(consumption)
         # Zero out every component above DC + FFT_BASE_HARMONICS
         cutoff = 1 + FFT_BASE_HARMONICS
         coeffs[cutoff:] = 0.0
         base_day = np.fft.irfft(coeffs, n=n)
         # Clip negatives and values above the actual consumption
-        base_day = np.clip(base_day, 0, y.max() if y.max() > 0 else 0)
+        base_day = np.clip(base_day, 0, consumption.max() if consumption.max() > 0 else 0)
         base_signal_parts.append(pd.Series(base_day, index=group.index))
 
     base_signal = pd.concat(base_signal_parts).reindex(df_c.index)
 
     # --- Step 2: Global overnight anchor ---
     # Scale the per-day base signals so the base level is globally stable and
-    # comparable across days. Anchor = 0.95 quantile of raw overnight consumption.
+    # comparable across days, using a very high quantile (OVERNIGHT_ANCHOR) of raw overnight consumption.
     oh_start, oh_end = OVERNIGHT_HOURS
-    overnight_mask = (
-        df_local["timestamp_local"].dt.hour >= oh_start
-    ) & (
-        df_local["timestamp_local"].dt.hour < oh_end
-    )
+    overnight_mask = df_local["timestamp_local"].dt.hour.between(oh_start, oh_end)
     overnight_vals = df_c.loc[overnight_mask, "consumption_kwh"]
-    overnight_anchor = overnight_vals.quantile(0.95) if not overnight_vals.empty else base_signal.mean()
+    overnight_anchor = overnight_vals.quantile(OVERNIGHT_ANCHOR) if not overnight_vals.empty else base_signal.mean()
     overnight_anchor = float(overnight_anchor) if not pd.isna(overnight_anchor) else 0.0
 
     # Rescale each day's FFT base so its mean equals overnight_anchor.
@@ -85,7 +80,7 @@ def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame,
         seg = base_signal.loc[group.index]
         seg_mean = seg.mean()
         if seg_mean > NEGLIGABLE_KWH:
-            seg = seg * (overnight_anchor / seg_mean)
+            seg *= (overnight_anchor / seg_mean)
         else:
             seg = pd.Series(overnight_anchor, index=group.index)
         # Never let base exceed actual consumption
@@ -115,7 +110,7 @@ def classify_usage(df: pd.DataFrame, local_timezone: str) -> tuple[pd.DataFrame,
     trigger_threshold = positive_diffs.std() * STD_MULTIPLE if not positive_diffs.empty else 0.0
     trigger_threshold = 0.0 if pd.isna(trigger_threshold) else float(trigger_threshold)
 
-    # Condition A — rapid-onset trigger + sustain (stateful)
+    # Condition A — rapid-onset trigger + sustain
     is_peak_trigger = []
     in_peak_state = False
     for i in range(len(df_c)):

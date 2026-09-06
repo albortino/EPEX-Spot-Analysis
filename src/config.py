@@ -16,11 +16,11 @@ FLEX_COLOR_LIGHT = "#f29f6c"
 FLEX_COLOR_SHADE = "rgba(249, 100, 7, 0.08)"
 VARIABLE_COLOR = "#F39C12"
 STATIC_COLOR = "#989898"
-PERSONAL_DATA_COLOR = "#2a9d8f" # A teal/green color
+PERSONAL_DATA_COLOR = "#2a9d8f"
 PERSONAL_DATA_COLOR_LIGHT = "#78c2b9"
-PERSONAL_DATA_COLOR_SHADE = "rgba(42, 157, 143, 0.1)" # A light shade for fill
-BASE_COLOR = STATIC_COLOR # Base load is less influenceable, so grey is fine
-REGULAR_COLOR = PERSONAL_DATA_COLOR # Regular load is part of personal consumption
+PERSONAL_DATA_COLOR_SHADE = "rgba(42, 157, 143, 0.1)"
+BASE_COLOR = STATIC_COLOR  # Base load is less influenceable, so grey is fine
+REGULAR_COLOR = PERSONAL_DATA_COLOR  # Regular load is part of personal consumption
 FORECAST_ACTUAL_COLOR = PERSONAL_DATA_COLOR_LIGHT
 FORECAST_PREDICTED_COLOR = PERSONAL_DATA_COLOR
 FORECAST_UNCERTAINTY_COLOR = "rgba(68, 68, 68, 0.2)"
@@ -30,7 +30,7 @@ RED = "#d65f5f"
 MEKKO_BORDER = 0.002
 
 # --- Analysis Parameters ---
-ABSENCE_THRESHOLD = 0.75 # Determines a day of absence if consumption is below 75% of the daily base load.
+ABSENCE_THRESHOLD = 0.75  # Determines a day of absence if consumption is below 75% of the daily base load.
 
 # --- Usage Classification Parameters ---
 NEGLIGABLE_KWH = 0.05
@@ -45,7 +45,6 @@ THRESHOLD_STABLE_TREND = 5
 TODAY_IS_MAX_DATE = True
 DEBUG = True
 
-
 # --- Peak Detection Parameters ---
 # Number of low-frequency harmonics (beyond DC) kept when reconstructing the
 # base signal via FFT. 0 = flat per-day base; 1 captures one slow daily rhythm.
@@ -53,6 +52,7 @@ FFT_BASE_HARMONICS = 0
 
 # Hours of day considered "overnight" for anchoring the global base level
 OVERNIGHT_HOURS = (1, 5)
+OVERNIGHT_ANCHOR = 0.95  # Percentile for base load
 
 # Minimum consecutive intervals a residual must exceed the peak amplitude for sustained pea
 # 1 = a single 15-min interval suffices (catches kettles, short bursts)

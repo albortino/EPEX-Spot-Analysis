@@ -195,10 +195,12 @@
     "total_row_label": "Gesamt",
     "average_row_label": "Durchschnitt",
     "days_metric": "Tage",
+    "days_analyzed_metric": "Analysierte Tage",
     "total_consumption_metric": "Gesamtverbrauch in Upload",
     "avg_consumption_per_month_metric": "Durchschnitt / Monat",
     "estimated_consumption_per_year_metric": "Hochrechnung / Jahr",
     "peak_timing_score_metric": "Peak-Timing-Score",
     "peak_timing_score_help": "Anteil deiner Spitzenlast (z.B. E-Auto-Laden, Wärmepumpe), der auf die günstigsten 25 % der Marktstunden pro Monat entfiel. 100 % bedeutet, alle Spitzen lagen perfekt in günstigen Stunden.",
-    "dataquality": "Datenqualität"
+    "dataquality": "Datenqualität",
+    "upload_format_unsupported": "Falsches Format bereitgestellt. Bitte passe das Format an oder erstelle ein GitHub-Ticket."
 }
