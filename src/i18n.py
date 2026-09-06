@@ -20,4 +20,3 @@ def t(key: str, **kwargs):
     lang = st.session_state.get("lang", "de")
     translations = _load_translations(lang)
     return translations.get(key, key).format(**kwargs)
-

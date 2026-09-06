@@ -3,13 +3,15 @@ import io
 import re
 import requests
 import os
+import subprocess
+import shutil
 import json
 import pytz
 from typing import List, Optional
 from dataclasses import dataclass, asdict
 from src.config import LOCAL_TIMEZONE, CACHE_FOLDER
-from src.utils import get_intervals_per_day
 from src.logger import logger
+
 
 @dataclass
 class ProviderFormat:
@@ -29,6 +31,7 @@ class ProviderFormat:
     feedin: bool = False
     end_timestamp_col: Optional[str] = None
     preprocess_date_func: Optional[str] = None
+
 
 class JavaScriptNetzbetreiberParser:
     """Parses Netzbetreiber configurations from aWATTar JavaScript files."""
@@ -111,19 +114,23 @@ class JavaScriptNetzbetreiberParser:
         m = re.search(rf"{key}\s*:\s*\[(.*?)\]", text, re.DOTALL)
         if not m:
             return []
-        items = [s.strip(" \"'\t\r\n") for s in m.group(1).split(",")]
-        return [item for item in items if item]
+        items = re.findall(r"""["']([^"']+)["']""", m.group(1))
+        return [item.strip() for item in items if item.strip()]
+
 
 class ConsumptionDataParser:
     """Parser that can load configurations from JavaScript (awattar backtesting) and parse various formats of electricity consumption data. """
 
-    def __init__(self, local_timezone=LOCAL_TIMEZONE, js_url="https://raw.githubusercontent.com/awattar-backtesting/awattar-backtesting.github.io/main/docs/netzbetreiber.js", js_content=None):
+    def __init__(self,
+                 local_timezone=LOCAL_TIMEZONE,
+                 js_url="https://raw.githubusercontent.com/awattar-backtesting/awattar-backtesting.github.io/main/docs/netzbetreiber.js",
+                 js_content=None):
         self.local_timezone = local_timezone
         self.js_parser = JavaScriptNetzbetreiberParser()
         self.cache_file = os.path.join(CACHE_FOLDER, "provider_formats.json")
         self.user_formats_file = os.path.join(CACHE_FOLDER, "additional_provider_formats.json")
 
-        # Load user-defined formats. They are always loaded and take precedence.
+        # Load user-defined formats, they have priority.
         user_formats = self._load_user_defined_formats()
 
         # Load formats from JS, then cache, then defaults.
@@ -152,13 +159,14 @@ class ConsumptionDataParser:
         # Combine lists. User formats are first in the list.
         self.provider_formats = user_formats + main_formats
         logger.log(f"Total of {len(self.provider_formats)} provider formats loaded ({len(user_formats)} user-defined, {len(main_formats)} main).")
+        self._ensure_upstream_preprocessor()
 
     def _load_user_defined_formats(self) -> List[ProviderFormat]:
         """Loads user-defined provider formats from own_provider_formats.json."""
         try:
             with open(self.user_formats_file, "r", encoding="utf-8") as f:
                 formats_from_json = json.load(f)
-            
+
             user_formats = [ProviderFormat(**item) for item in formats_from_json]
             logger.log(f"Loaded {len(user_formats)} user-defined provider configurations from {self.user_formats_file}.", severity=1)
             return user_formats
@@ -173,13 +181,13 @@ class ConsumptionDataParser:
         """Saves the current provider_formats to the JSON cache file."""
         if not formats:
             return
-        
+
         try:
             if not os.path.exists(CACHE_FOLDER):
                 os.makedirs(CACHE_FOLDER)
-            
+
             formats_as_dict = [asdict(fmt) for fmt in formats]
-            
+
             with open(self.cache_file, "w", encoding="utf-8") as f:
                 json.dump(formats_as_dict, f, indent=4, ensure_ascii=False)
             logger.log(f"Saved {len(formats)} provider configurations to cache at {self.cache_file}", severity=1)
@@ -191,7 +199,7 @@ class ConsumptionDataParser:
         try:
             with open(self.cache_file, "r", encoding="utf-8") as f:
                 formats_from_json = json.load(f)
-            
+
             formats = [ProviderFormat(**item) for item in formats_from_json]
             logger.log(f"Loaded {len(formats)} provider configurations from cache.", severity=1)
             return formats
@@ -207,11 +215,110 @@ class ConsumptionDataParser:
             parsed_formats = self.js_parser.parse_js_file(js_content)
             if not parsed_formats:
                 raise ValueError("No provider formats found in JavaScript content.")
-            
+
             logger.log(f"Loaded {len(parsed_formats)} provider configurations from JavaScript.", severity=1)
             return parsed_formats
         except Exception as e:
             raise ValueError(f"Error parsing JavaScript content: {e}") from e
+
+    def _ensure_upstream_preprocessor(self):
+        """Fetches and caches upstream preprocess.js and encoding.js to build runner.js."""
+        try:
+            js_dir = os.path.join(CACHE_FOLDER, "upstream_js")
+            os.makedirs(js_dir, exist_ok=True)
+            prep_file = os.path.join(js_dir, "preprocess.js")
+            enc_file = os.path.join(js_dir, "encoding.js")
+            runner_file = os.path.join(js_dir, "runner.js")
+
+            # Try to fetch upstream files if missing
+            base_url = "https://raw.githubusercontent.com/awattar-backtesting/awattar-backtesting.github.io/main/docs/calc/"
+            for fname, fpath in [("preprocess.js", prep_file), ("encoding.js", enc_file)]:
+                if not os.path.exists(fpath):
+                    try:
+                        resp = requests.get(base_url + fname, timeout=5)
+                        if resp.status_code == 200:
+                            with open(fpath, "w", encoding="utf-8") as f:
+                                f.write(resp.text)
+                    except Exception as e:
+                        logger.log(f"Could not download upstream {fname}: {e}", severity=0)
+
+            # Build self-contained runner.js if preprocess and encoding exist
+            if os.path.exists(prep_file) and os.path.exists(enc_file):
+                with open(enc_file, "r", encoding="utf-8") as f:
+                    enc_code = f.read().replace("export function", "function")
+                with open(prep_file, "r", encoding="utf-8") as f:
+                    prep_code = re.sub(r"import\s+.*?;\s*", "", f.read()).replace("export function", "function")
+
+                runner_code = (
+                    "const fs = require('fs');\n\n"
+                    + enc_code + "\n"
+                    + prep_code + "\n"
+                    + "const buf = fs.readFileSync(0);\n"
+                    + "const stripped = stripPlain(buf);\n"
+                    + "let output;\n"
+                    + "if (typeof stripped === 'string') {\n"
+                    + "    output = stripped;\n"
+                    + "} else if (stripped && stripped.buffer) {\n"
+                    + "    output = bufferToString(stripped);\n"
+                    + "} else if (stripped instanceof ArrayBuffer) {\n"
+                    + "    output = bufferToString(stripped);\n"
+                    + "} else {\n"
+                    + "    output = bufferToString(buf);\n"
+                    + "}\n"
+                    + "output = output.replace(/^\\uFEFF/, '');\n"
+                    + "output = output.replace(/^sep=;[\\r\\n]+/, '');\n"
+                    + "process.stdout.write(output, 'latin1');\n"
+                )
+                with open(runner_file, "w", encoding="utf-8") as f:
+                    f.write(runner_code)
+        except Exception as e:
+            logger.log(f"Error initializing upstream preprocessor: {e}", severity=0)
+
+    def _preprocess_content(self, raw_content: bytes) -> str:
+        """Runs upstream JS stripPlain preprocessing via Node.js if available, with python fallback."""
+        runner_file = os.path.join(CACHE_FOLDER, "upstream_js", "runner.js")
+        if shutil.which("node") and os.path.exists(runner_file):
+            try:
+                proc = subprocess.Popen(
+                    ["node", runner_file],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                out, _ = proc.communicate(input=raw_content, timeout=5)
+                if proc.returncode == 0 and out:
+                    try:
+                        text = out.decode("utf-8-sig")
+                    except UnicodeDecodeError:
+                        text = out.decode("latin-1")
+                    text = text.lstrip("\ufeff")
+                    if text.startswith("sep=;\r\n"):
+                        text = text[7:]
+                    elif text.startswith("sep=;\n"):
+                        text = text[6:]
+                    return text
+            except Exception as e:
+                logger.log(f"Upstream node preprocessor error: {e}, falling back", severity=0)
+
+        # Python fallback if node is not present or failed
+        try:
+            text = raw_content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = raw_content.decode("latin-1")
+
+        text = text.lstrip("\ufeff")
+        if text.startswith("sep=;\r\n"):
+            text = text[7:]
+        elif text.startswith("sep=;\n"):
+            text = text[6:]
+
+        if all(k in text for k in ["Kundennummer", "Kundenname", "ZP-Nummer", "Energierichtung"]):
+            text = "\n".join(text.splitlines()[8:])
+        tiwag_lines = text.splitlines()
+        if len(tiwag_lines) >= 5 and "DATE_FROM;DATE_TO;VALUE" in tiwag_lines[4]:
+            text = "\n".join(tiwag_lines[4:])
+
+        return text
 
     def parse_file(self, uploaded_file) -> pd.DataFrame:
         """Tries to parse the uploaded file with all available format configurations."""
@@ -223,16 +330,13 @@ class ConsumptionDataParser:
                 raw_content = uploaded_file.getvalue()
             else:
                 raw_content = uploaded_file.read()
-            if isinstance(raw_content, bytes):
-                try:
-                    file_content = raw_content.decode("utf-8-sig")
-                except UnicodeDecodeError:
-                    file_content = raw_content.decode("latin-1")
-            else:
-                file_content = raw_content
+            if isinstance(raw_content, str):
+                raw_content = raw_content.encode("utf-8")
         except Exception as e:
             logger.log(f"Error reading uploaded file: {e}", severity=1)
             return pd.DataFrame()
+
+        file_content = self._preprocess_content(raw_content)
 
         for provider_format in self.provider_formats:
             try:
@@ -241,29 +345,27 @@ class ConsumptionDataParser:
                     logger.log(f"Successfully parsed with format: {provider_format.name}", severity=1)
                     return self._standardize_dataframe(df)
             except Exception as e:
-                # This is expected if a format doesn"t match, so no log needed unless debugging.
-                # logger.log(f"Attempted format "{provider_format.name}" and failed: {e}")
-                continue
-        
+                logger.log(f"Format {provider_format.name} skipped: {e}", severity=0)
+
         logger.log("No suitable parser found for the uploaded file.", severity=1)
         return pd.DataFrame()
 
     def _try_parse(self, file_content_io: io.StringIO, config: ProviderFormat) -> pd.DataFrame:
         """Enhanced parser that handles more complex cases from JavaScript configurations."""
         df = pd.read_csv(file_content_io, sep=config.separator, decimal=config.decimal,
-                         skiprows=config.skiprows, encoding=config.encoding, 
+                         skiprows=config.skiprows, encoding=config.encoding,
                          skipinitialspace=True, on_bad_lines="skip")
 
         # Clean column names
         df.columns = df.columns.str.strip()
-        
+
         # Check required columns
         required_cols = [config.timestamp_col] + (config.other_cols if config.other_cols else [])
         if config.time_sub_col:
             required_cols.append(config.time_sub_col)
         if config.end_timestamp_col:
             required_cols.append(config.end_timestamp_col)
-        
+
         if not all(col in df.columns for col in required_cols):
             raise ValueError(f"Missing required columns for format: {config.name}")
 
@@ -271,10 +373,10 @@ class ConsumptionDataParser:
         usage_col_name = self._find_usage_column(df.columns, config.usage_col)
         if not usage_col_name:
             raise ValueError(f"Usage column not found for format: {config.name}")
-        
+
         # Process entries
         df.rename(columns={usage_col_name: "consumption_kwh"}, inplace=True)
-        
+
         # Handle timestamp combination
         if config.time_sub_col:
             df["timestamp_str"] = (df[config.timestamp_col].astype(str).str.strip() + " " + df[config.time_sub_col].astype(str).str.strip())
@@ -285,29 +387,29 @@ class ConsumptionDataParser:
         if config.preprocess_date_func:
             # Vectorized operation is much faster than .apply()
             df["timestamp_str"] = df["timestamp_str"].str.split('-').str[0].str.strip()
-        
+
         # Parse consumption values
         df["consumption_kwh"] = pd.to_numeric(df["consumption_kwh"].astype(str).str.replace(",", "."), errors="coerce")
-        
+
         # Apply should_skip logic
         if config.should_skip_func:
             df = self._apply_skip_logic(df, config.should_skip_func)
-        
+
         # Filter based on end timestamp if specified
         if config.end_timestamp_col:
             df = self._filter_by_time_interval(df, config)
-        
+
         df.dropna(subset=["timestamp_str", "consumption_kwh"], inplace=True)
-        
+
         # Parse timestamps
         if config.date_format == "ISO8601":
             df["timestamp_local"] = pd.to_datetime(df["timestamp_str"], utc=True)
         else:
             df["timestamp_local"] = pd.to_datetime(df["timestamp_str"], format=config.date_format, dayfirst=True)
-        
+
         # Apply timestamp fixup
         if config.fixup_timestamp:
-             df["timestamp_local"] -= pd.Timedelta(minutes=15)
+            df["timestamp_local"] -= pd.Timedelta(minutes=15)
 
         return df[["timestamp_local", "consumption_kwh"]].dropna()
 
@@ -348,34 +450,37 @@ class ConsumptionDataParser:
 
     def _standardize_dataframe(self, df: pd.DataFrame) -> pd.DataFrame:
         """Convert timestamp to UTC and standardize the output format. Handles DST transitions robustly."""
-        
+
+        from src.utils import get_intervals_per_day
+
         def handle_dst_transitions(df: pd.DataFrame, timezone_str: str) -> pd.Series:
             """
             Handle DST transitions by identifying and processing different types of timestamps.
-            
+
             Parameters:
                 df: DataFrame with a "timestamp_local" column (naive datetime)
                 timezone_str: Timezone string (e.g., "Europe/Vienna")
-                
+
             Returns:
                 A pandas Series with timezone-aware UTC timestamps.
             """
+
             timezone = pytz.timezone(timezone_str)
             utc_timestamps = []
-            
+
             for timestamp in df["timestamp_local"]:
                 try:
                     # First, try normal localization
                     localized = timezone.localize(timestamp)
                     utc_timestamps.append(localized.astimezone(pytz.UTC))
-                    
+
                 except pytz.AmbiguousTimeError:
                     # Handle fall-back transition (ambiguous time)
                     # Default to DST=False (standard time) for consistency
                     localized = timezone.localize(timestamp, is_dst=False)
                     utc_timestamps.append(localized.astimezone(pytz.UTC))
                     logger.log(f"Ambiguous time {timestamp} resolved to standard time")
-                    
+
                 except pytz.NonExistentTimeError:
                     # Handle spring-forward transition (non-existent time)
                     # Move forward to the next valid time
@@ -389,48 +494,48 @@ class ConsumptionDataParser:
                         # If that fails, use UTC directly
                         utc_timestamps.append(timestamp.replace(tzinfo=pytz.UTC))
                         logger.log(f"Non-existent time {timestamp} treated as UTC")
-                        
+
                 except Exception as e:
                     # Fallback for any other errors
                     logger.log(f"Unexpected error localizing {timestamp}: {e}")
                     utc_timestamps.append(timestamp.replace(tzinfo=pytz.UTC))
-            
+
             return pd.Series(utc_timestamps, index=df.index)
-        
+
         # Input validation
         if df.empty:
             logger.log("Input DataFrame is empty")
             return df
-            
+
         if "timestamp_local" not in df.columns:
             logger.log("DataFrame missing 'timestamp_local' column")
             return df
-            
+
         if "consumption_kwh" not in df.columns:
             logger.log("DataFrame missing 'consumption_kwh' column")
             return df
-        
+
         # Sort by timestamp to ensure proper ordering
         df = df.sort_values(by="timestamp_local").reset_index(drop=True)
-        
+
         # Handle timezone conversion
         if df["timestamp_local"].dt.tz is not None:
             # Already timezone-aware, just convert to UTC
             df["timestamp"] = df["timestamp_local"].dt.tz_convert("UTC")
             logger.log("Converted timezone-aware timestamps to UTC")
-            
+
         else:
             # Handle naive timestamps
             timezone_str = getattr(self, "local_timezone", "Europe/Vienna")
-            
+
             try:
                 # Use our robust DST handler
                 df["timestamp"] = handle_dst_transitions(df, timezone_str)
                 logger.log(f"Successfully localized naive timestamps using {timezone_str}")
-                
+
             except Exception as e:
                 logger.log(f"Error in DST transition handling: {e}")
-                
+
                 # Final fallback: treat as UTC
                 try:
                     df["timestamp"] = df["timestamp_local"].dt.tz_localize("UTC")
@@ -438,16 +543,16 @@ class ConsumptionDataParser:
                 except Exception as fallback_error:
                     logger.log(f"Even fallback failed: {fallback_error}")
                     return pd.DataFrame()  # Return empty DataFrame on complete failure
-        
+
         # Validate that we have valid timestamps
         if df["timestamp"].isna().any():
             logger.log("Some timestamps could not be converted, dropping NaT values")
             df = df.dropna(subset=["timestamp"])
-        
+
         if df.empty:
             logger.log("No valid timestamps after conversion")
             return df
-        
+
         # Determine aggregation level
         try:
             intervals_per_day = get_intervals_per_day(df)
@@ -461,18 +566,18 @@ class ConsumptionDataParser:
         except Exception as e:
             logger.log(f"Could not determine intervals per day: {e}, defaulting to hourly")
             aggregation_level = "h"
-        
+
         # Resample data
         try:
             df_resampled = (df.set_index("timestamp")["consumption_kwh"]
-                        .resample(aggregation_level)
-                        .sum()
-                        .dropna()
-                        .reset_index())
-            
+                            .resample(aggregation_level)
+                            .sum()
+                            .dropna()
+                            .reset_index())
+
             # Ensure we have the expected columns
             df_result = df_resampled[["timestamp", "consumption_kwh"]].reset_index(drop=True)
-            
+
             # --- Memory Optimization ---
             # Downcast numeric columns to the smallest possible type to save memory
             df_result["consumption_kwh"] = pd.to_numeric(df_result["consumption_kwh"], downcast="float")
@@ -487,9 +592,9 @@ class ConsumptionDataParser:
                 logger.log("DataFrame is empty after resampling")
             else:
                 logger.log(f"Successfully resampled to {len(df_result)} rows")
-                
+
             return df_result
-            
+
         except Exception as e:
             logger.log(f"Error during resampling: {e}")
             return pd.DataFrame()
@@ -497,10 +602,10 @@ class ConsumptionDataParser:
 
 # Example usage
 if __name__ == "__main__":
-    
+
     # Create parser with default configurations
     parser = ConsumptionDataParser()
-    
+
     logger.log("Available provider formats:")
     for fmt in parser.provider_formats:
         logger.log(f"- {fmt.name}")

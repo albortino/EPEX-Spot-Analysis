@@ -24,7 +24,7 @@ def get_min_max_date(df: pd.DataFrame, today_as_max: bool = TODAY_IS_MAX_DATE) -
     min_val_date = df["timestamp"].min().date()
     if min_val_date < MIN_DATE:
         min_val_date = MIN_DATE
-        
+
     data_max = df["timestamp"].max().date()
     # Never expand an historic upload to today; that creates needless API calls
     # and makes the default period look as though it contains missing data.
@@ -103,7 +103,7 @@ def filter_by_quarter(df: pd.DataFrame, selected_quarter: str) -> pd.DataFrame:
 
     mask = (df["timestamp"].dt.month >= start_month) & \
            (df["timestamp"].dt.month <= end_month)
-    
+
     return df.loc[mask]
 
 # --- Validation Utils ---

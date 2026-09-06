@@ -7,6 +7,7 @@ from datetime import datetime, date, time
 from zoneinfo import ZoneInfo
 from src.config import SPOT_PRICE_CACHE_FILE, LOCAL_TIMEZONE, CACHE_FOLDER
 from src.file_parser import ConsumptionDataParser
+from src.i18n import t
 from src.logger import logger
 
 # --- Spot Price Data Handling ---
@@ -31,7 +32,7 @@ def _fetch_spot_data(country: str, start: date, end: date, cache_filename: str) 
     start_dt = datetime.combine(start, time.min, tzinfo=ZoneInfo(LOCAL_TIMEZONE)).astimezone(ZoneInfo("UTC"))
     end_dt = datetime.combine(end + pd.Timedelta(days=1), time.min, tzinfo=ZoneInfo(LOCAL_TIMEZONE)).astimezone(ZoneInfo("UTC"))
     params = {"start": int(start_dt.timestamp() * 1000), "end": int(end_dt.timestamp() * 1000)}
-    
+
     try:
         logger.log("Fetching spot price data from aWATTar API.", severity=1)
         response = None
@@ -57,7 +58,7 @@ def _fetch_spot_data(country: str, start: date, end: date, cache_filename: str) 
         VAT_FACTOR = 1.2 if country == "at" else 1.19
         df["spot_price_eur_kwh"] = df["marketprice"] / 1000 * VAT_FACTOR  # Convert Eur/MWh to Eur/kWh and add 20% VAT
         df_to_return = df[["timestamp", "spot_price_eur_kwh"]]
-        
+
         existing = _load_from_cache(cache_filename) if os.path.exists(cache_filename) else pd.DataFrame()
         if not existing.empty:
             df_to_return = pd.concat([existing, df_to_return]).drop_duplicates("timestamp").sort_values("timestamp")
@@ -74,10 +75,10 @@ def get_spot_data(country: str, start: date, end: date) -> pd.DataFrame:
     """Fetches spot market price data, using a local cache to avoid redundant API calls."""
     if not os.path.exists(CACHE_FOLDER):
         os.makedirs(CACHE_FOLDER)
-    
+
     country_cache_filename = f"{country}_{SPOT_PRICE_CACHE_FILE}"
     cache_path = os.path.join(CACHE_FOLDER, country_cache_filename)
-    
+
     cached_slice = pd.DataFrame()
     if os.path.exists(cache_path):
         df_cache = _load_from_cache(cache_path)
@@ -88,7 +89,7 @@ def get_spot_data(country: str, start: date, end: date) -> pd.DataFrame:
                 logger.log("Loading spot prices from cache.", severity=1)
                 return df_cache[(df_cache["timestamp"].dt.date >= start) & (df_cache["timestamp"].dt.date <= end)]
             cached_slice = df_cache[(df_cache["timestamp"].dt.date >= start) & (df_cache["timestamp"].dt.date <= end)]
-    
+
     logger.log("Cache insufficient or missing. Fetching new data from aWATTar.", severity=1)
     fetched = _fetch_spot_data(country, start, end, cache_path)
     return fetched if not fetched.empty else cached_slice
@@ -107,12 +108,12 @@ def process_consumption_data(uploaded_file) -> pd.DataFrame:
         parser = ConsumptionDataParser(local_timezone=LOCAL_TIMEZONE)
         df = parser.parse_file(uploaded_file)
         if df.empty:
-            st.error("Could not parse the CSV file. Please ensure it is from a supported provider or in the default format.")
+            st.info(t("upload_format_unsupported"), icon="ℹ️")
         return df.convert_dtypes()
     except Exception as e:
         error_id = datetime.now().strftime("%Y%m%d%H%M%S")
         logger.log(f"Upload parsing error {error_id}: {e}", severity=1)
-        st.error(f"The file could not be processed (reference {error_id}).")
+        st.info(t("upload_format_unsupported"), icon="ℹ️")
         return pd.DataFrame()
 
 # --- Data Merging ---
@@ -137,5 +138,5 @@ def merge_consumption_with_prices(df_consumption: pd.DataFrame, df_spot_prices: 
     if not df_merged.empty:
         df_merged["timestamp"] = df_merged["timestamp"].dt.tz_convert(LOCAL_TIMEZONE)
         df_merged["date"] = df_merged["timestamp"].dt.date
-        
+
     return df_merged.convert_dtypes()

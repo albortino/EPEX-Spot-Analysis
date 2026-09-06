@@ -1,6 +1,8 @@
+# python -m pytest tests/test_tariffs.py
 import os
 import pandas as pd
 import pytest
+
 from src.tariffs import Tariff, TariffManager, TariffType, SpotTariff, FixedTariff, TimeVariableTariff
 
 
@@ -18,8 +20,8 @@ def sample_hourly_df():
 
 def test_tariff_manager_loads_real_files():
     """Verify loading from production JSON configuration files including variable tariffs."""
-    flex_path = "resources/tariffs_flexible.json"
-    static_path = "resources/tariffs_static.json"
+    flex_path = "resources/tariffs_spot.json"
+    static_path = "resources/tariffs_fixed.json"
     var_path = "resources/tariffs_variable.json"
     assert os.path.exists(flex_path), f"{flex_path} not found"
     assert os.path.exists(static_path), f"{static_path} not found"
@@ -52,7 +54,7 @@ def test_tariff_manager_loads_real_files():
 
 def test_get_tariffs_with_custom():
     """Verify custom tariff option is injected into all 3 tariff dictionaries."""
-    manager = TariffManager("resources/tariffs_flexible.json", "resources/tariffs_static.json", "resources/tariffs_variable.json")
+    manager = TariffManager("resources/tariffs_spot.json", "resources/tariffs_fixed.json", "resources/tariffs_variable.json")
     flex_dict = manager.get_flex_tariffs_with_custom()
     var_dict = manager.get_variable_tariffs_with_custom()
     static_dict = manager.get_static_tariffs_with_custom()

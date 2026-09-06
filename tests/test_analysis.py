@@ -1,5 +1,9 @@
+# python -m pytest tests/test_analysis.py
+
+
 import pandas as pd
 import pytest
+
 from src.analysis import (
     classify_usage,
     compute_cost_comparison_data,

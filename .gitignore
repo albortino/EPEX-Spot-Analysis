@@ -6,3 +6,4 @@ graphify-out/
 .agents
 *.bak
 .DS_STORE
+upstream_js/

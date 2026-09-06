@@ -15,7 +15,7 @@ def _get_interval_text(intervals_per_day: int, t) -> str:
         interval_text = t("interval_per_minute", minutes=minutes)
     else:
         interval_text = "" # Fallback for daily data or other resolutions
-        
+
     return interval_text
 
 def get_price_chart(df: pd.DataFrame, static_price: float) -> go.Figure:
@@ -189,7 +189,7 @@ def get_marimekko_chart(df: pd.DataFrame, border_color: str = "#FFFFFF", price_t
         width = row["proportion"]
         price = row["avg_price"]
         label = row["Profile"]
-        
+
         # Background bar (border)
         bars.append(
             go.Bar(
@@ -202,7 +202,7 @@ def get_marimekko_chart(df: pd.DataFrame, border_color: str = "#FFFFFF", price_t
                 showlegend=False,
             )
         )
-        
+
         # Foreground bar (actual data)
         bars.append(
             go.Bar(
@@ -278,10 +278,10 @@ def get_trend_chart(df_history: pd.DataFrame, df_forecast: pd.DataFrame) -> go.F
         fill="tonexty",
         name="Uncertainty Interval",
     ))
-    
+
     # Add the historical actual consumption
     fig.add_trace(go.Scatter(
-        x=df_history["ds"], 
+        x=df_history["ds"],
         y=df_history["y"],
         mode="lines",
         line=dict(width=2, color=FORECAST_ACTUAL_COLOR), # type: ignore
@@ -304,25 +304,25 @@ def get_trend_chart(df_history: pd.DataFrame, df_forecast: pd.DataFrame) -> go.F
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         showlegend=True
     )
-    
+
     return fig
 
 def get_seasonality_charts(model: Prophet, forecast: pd.DataFrame) -> go.Figure:
     """Generates individual Plotly charts for each seasonality component in the Prophet model."""
     from prophet.plot import plot_components_plotly
     fig = plot_components_plotly(model, forecast, uncertainty=False)
-    
+
     for trace in fig.data:
-        
+
         # Update the line color for the main line trace
         if trace.mode == 'lines':
             trace.line.color = PERSONAL_DATA_COLOR_LIGHT
-        
+
         # If there are uncertainty bands, you might want to adjust their color too
         # Prophet's plot_components_plotly uses fill for uncertainty
         elif trace.fill == 'tonexty': # Uncertainty bands usually have fill='tonexty'
             trace.fillcolor = FORECAST_UNCERTAINTY_COLOR + '40' # Adding transparency
-                
+
     return fig
 
 def get_example_day_chart(df_day: pd.DataFrame, intervals_per_day: int) -> go.Figure:

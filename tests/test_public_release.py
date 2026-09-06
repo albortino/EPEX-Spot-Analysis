@@ -1,5 +1,6 @@
-from datetime import date
+# python -m pytest tests/test_public_release.py
 
+from datetime import date
 import pandas as pd
 
 from src.analysis import simulate_peak_shifting
