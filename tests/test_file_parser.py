@@ -1,3 +1,5 @@
+# python -m pytest tests/test_file_parser.py
+
 import os
 import io
 import pytest

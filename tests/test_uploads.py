@@ -1,6 +1,9 @@
+# python -m pytest tests/test_uploads.py
+
 import os
 import glob
 import pytest
+
 from src.file_parser import ConsumptionDataParser
 
 

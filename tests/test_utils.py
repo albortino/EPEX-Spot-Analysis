@@ -1,6 +1,9 @@
+# python -m pytest tests/test_utils.py
+
 import io
 from datetime import date
 import pandas as pd
+
 from src.utils import (
     get_intervals_per_day,
     has_granular_resolution,

@@ -1,6 +1,8 @@
+# python -m pytest tests/test_tariffs.py
 import os
 import pandas as pd
 import pytest
+
 from src.tariffs import Tariff, TariffManager, TariffType, SpotTariff, FixedTariff, TimeVariableTariff
 
 
