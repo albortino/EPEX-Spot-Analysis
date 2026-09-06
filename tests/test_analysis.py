@@ -215,6 +215,7 @@ def test_compute_consumption_trend_and_forecast_metrics():
     assert "forecast_total_kwh" in metrics
     assert "forecast_avg_kwh" in metrics
     assert "diff_kwh" in metrics
+    assert "diff_avg_kwh" in metrics
     assert "estimated_cost" in metrics
     assert metrics["forecast_total_kwh"] > 0
     assert metrics["estimated_cost"] > 0

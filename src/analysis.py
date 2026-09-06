@@ -538,6 +538,7 @@ def compute_consumption_trend_and_forecast(df: pd.DataFrame, forecast_periods: i
 
     diff_kwh = forecast_total_kwh - past_total_kwh
     diff_percent = (diff_kwh / past_total_kwh) * 100 if past_total_kwh > 0 else 0.0
+    diff_avg_kwh = forecast_avg_kwh - past_avg_kwh
 
     # Unit price estimation from existing tariffs or spot price in df
     total_consumption = df["consumption_kwh"].sum() if "consumption_kwh" in df.columns else 0.0
@@ -558,6 +559,7 @@ def compute_consumption_trend_and_forecast(df: pd.DataFrame, forecast_periods: i
         "past_total_kwh": past_total_kwh,
         "past_avg_kwh": past_avg_kwh,
         "diff_kwh": diff_kwh,
+        "diff_avg_kwh": diff_avg_kwh,
         "diff_percent": diff_percent,
         "baseline_type": baseline_type,
         "estimated_cost": estimated_cost,

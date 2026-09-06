@@ -860,12 +860,12 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
                         if metrics["baseline_type"] == "same_period_last_year"
                         else t("forecast_delta_past_period", days=forecast_days)
                     )
-                    diff_sign = "+" if metrics["diff_kwh"] >= 0 else ""
+                    diff_sign = "+" if metrics["diff_avg_kwh"] >= 0 else ""
                     st.metric(
                         label=t("forecast_avg_daily_label"),
                         value=f"{metrics['forecast_avg_kwh']:.2f} kWh",
-                        delta=f"{diff_sign}{metrics['diff_kwh']:,.1f} kWh ({diff_sign}{metrics['diff_percent']:.1f}%) {delta_label}",
-                        delta_color="inverse" if metrics["diff_kwh"] > 0 else "normal"
+                        delta=f"{diff_sign}{metrics['diff_avg_kwh']:.2f} kWh ({diff_sign}{metrics['diff_percent']:.1f}%) {delta_label}",
+                        delta_color="inverse" if metrics["diff_avg_kwh"] > 0 else "normal"
                     )
 
                 with m_col3:
@@ -886,7 +886,8 @@ def render_usage_pattern_tab(df: pd.DataFrame, base_threshold: float, peak_thres
                         label=t("underlying_consumption_trend_label"),
                         value=trend_description,
                         delta=f"{trend_metric:.1f}%",
-                        delta_color="inverse" if trend_metric < 0 else "normal"
+                        delta_color="inverse" if trend_metric < 0 else "normal",
+                        help=t("underlying_consumption_trend_help")
                     )
 
                 # Display the detailed chart
