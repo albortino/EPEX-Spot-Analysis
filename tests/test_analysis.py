@@ -95,6 +95,10 @@ def test_compute_cost_comparison_with_variable_tariff(multi_day_15m_df):
     assert "Total Variable Cost" in summary.columns
     assert "Avg. Variable Price" in summary.columns
     assert summary["Total Variable Cost"].sum() == pytest.approx(df["total_cost_variable"].sum())
+    cost_cols = ["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"]
+    totals = {c: summary[c].sum() for c in cost_cols}
+    expected_diff_sum = max(totals.values()) - min(totals.values())
+    assert summary["Difference (€)"].sum() == pytest.approx(expected_diff_sum)
 
 
 def test_compute_cumulative_savings_three_tariffs(multi_day_15m_df):
@@ -190,7 +194,11 @@ def test_yearly_summary_and_cumulative_chart_titles(multi_day_15m_df):
     assert "Total Variable Cost" in yearly.columns
     assert "Total Static Cost" in yearly.columns
     assert "Difference (€)" in yearly.columns
-    expected_diff = yearly[["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"]].max(axis=1) - yearly[["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"]].min(axis=1)
+    cost_cols = ["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"]
+    totals = {c: yearly[c].sum() for c in cost_cols}
+    expensive_col = max(totals, key=totals.get)
+    cheapest_col = min(totals, key=totals.get)
+    expected_diff = yearly[expensive_col] - yearly[cheapest_col]
     assert yearly["Difference (€)"].tolist() == pytest.approx(expected_diff.tolist())
 
     savings_df = compute_cumulative_savings_data(df)

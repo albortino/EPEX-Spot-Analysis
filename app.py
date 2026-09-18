@@ -5,6 +5,7 @@ import src.analysis as analysis
 import src.ui_components as ui
 from src.tariffs import TariffManager
 from src.utils import filter_dataframe, filter_by_quarter, inspect_consumption, inspect_price_coverage
+from src.i18n import t
 
 
 # --- Page and App Configuration ---
@@ -66,43 +67,39 @@ def main():
     # --- Tab Definitions based on Mode ---
     if mode == "Expert":
         tab_options = [
-            "📊 Spot Price Analysis", 
-            "💰 Cost Comparison", 
-            "📈 Usage Patterns",
-            "⬇️ Download",
-            "❓ FAQ",
-            "ℹ️ About"
+            t("tab_spot_price_analysis"), 
+            t("tab_cost_comparison"), 
+            t("tab_usage_patterns"),
+            t("tab_download"),
+            t("tab_faq"),
+            t("tab_about")
         ]
     else: # Basic Mode
         tab_options = [
-            "🏠 Dashboard",
-            "⬇️ Download",
-            "❓ FAQ",
-            "ℹ️ About"
+            t("tab_dashboard"),
+            t("tab_download"),
+            t("tab_faq"),
+            t("tab_about")
         ]
     
     tabs = st.tabs(tab_options)  
 
     for i, tab_name in enumerate(tab_options):
         with tabs[i]:
-            # Icon-stripped name for matching
-            clean_tab_name = " ".join(tab_name.split(" ")[1:])
-            
-            # Render tabs using the pre-computed df_analysis
-            if clean_tab_name == "Dashboard":
+            if tab_name == t("tab_dashboard"):
                 ui.render_basic_dashboard_tab(df_analysis, static_tariff, base_threshold, peak_threshold)
-            elif clean_tab_name == "Spot Price Analysis":
+            elif tab_name == t("tab_spot_price_analysis"):
                 ui.render_price_analysis_tab(df_analysis, static_tariff)
-            elif clean_tab_name == "Cost Comparison":
+            elif tab_name == t("tab_cost_comparison"):
                 ui.render_cost_comparison_tab(df_analysis)
-            elif clean_tab_name == "Usage Patterns":
+            elif tab_name == t("tab_usage_patterns"):
                 ui.render_usage_pattern_tab(df_analysis, base_threshold, peak_threshold)
-            elif clean_tab_name == "Download":
+            elif tab_name == t("tab_download"):
                  # Use base analysis data
                 ui.render_download_tab(df_analysis_base, flex_tariff, start_date, end_date)
-            elif clean_tab_name == "FAQ":
+            elif tab_name == t("tab_faq"):
                 ui.render_faq_tab()
-            elif clean_tab_name == "About":
+            elif tab_name == t("tab_about"):
                 ui.render_about_tab()
 
     ui.render_footer()

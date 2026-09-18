@@ -652,7 +652,7 @@ def _compute_col_vals(df: pd.DataFrame, is_granular: bool, func, func_name: str)
         if "Difference (€)" in df.columns:
             result["Difference (€)"] = func(df["Difference (€)"])
         # For averages, we need to recalculate from totals, not average the averages
-        if func_name == "Average":
+        if func_name in ("Average", t("average_row_label")):
             total_consumption = df["Total Consumption"].sum()
             if "Total Flexible Cost" in df.columns:
                 result["Avg. Flex Price"] = df["Total Flexible Cost"].sum() / total_consumption if total_consumption > 0 else 0

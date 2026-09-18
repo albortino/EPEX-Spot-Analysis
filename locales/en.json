@@ -210,5 +210,12 @@
     "peak_timing_score_metric": "Peak Timing Score",
     "peak_timing_score_help": "Percentage of your peak load (high-power spikes like EV charging or heat pumps) that occurred during the cheapest 25% of market-price hours each month. 100% means all your peaks were perfectly timed to cheap hours.",
     "dataquality": "Data Quality",
-    "upload_format_unsupported": "Incorrect format provided. Please fix format or make a GitHub ticket."
+    "upload_format_unsupported": "Incorrect format provided. Please fix format or make a GitHub ticket.",
+    "tab_spot_price_analysis": "📊 Spot Price Analysis",
+    "tab_cost_comparison": "💰 Cost Comparison",
+    "tab_usage_patterns": "📈 Usage Patterns",
+    "tab_download": "⬇️ Download",
+    "tab_faq": "❓ FAQ",
+    "tab_about": "ℹ️ About",
+    "tab_dashboard": "🏠 Dashboard"
 }

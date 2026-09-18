@@ -347,7 +347,10 @@ def compute_cost_comparison_data(df: pd.DataFrame, resolution: str) -> pd.DataFr
 
     cost_cols_summary = [c for c in ["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"] if c in df_summary.columns]
     if len(cost_cols_summary) >= 2:
-        df_summary["Difference (€)"] = df_summary[cost_cols_summary].max(axis=1) - df_summary[cost_cols_summary].min(axis=1)
+        totals = {c: df_summary[c].sum() for c in cost_cols_summary}
+        expensive_col = max(totals, key=totals.get)
+        cheapest_col = min(totals, key=totals.get)
+        df_summary["Difference (€)"] = df_summary[expensive_col] - df_summary[cheapest_col]
     else:
         df_summary["Difference (€)"] = 0.0
     period_format = "%Y-%m-%d %H:%M" if resolution == "Hourly" else "%Y-%m-%d" if resolution == "Daily" else "%G-W%V" if resolution == "Weekly" else "%Y-%m"
@@ -584,7 +587,10 @@ def compute_yearly_summary(df: pd.DataFrame) -> pd.DataFrame:
     if not yearly_agg.empty and yearly_agg["Total Consumption"].sum() > 0:
         cost_cols_yearly = [c for c in ["Total Flexible Cost", "Total Variable Cost", "Total Static Cost"] if c in yearly_agg.columns]
         if is_granular and len(cost_cols_yearly) >= 2:
-            yearly_agg["Difference (€)"] = yearly_agg[cost_cols_yearly].max(axis=1) - yearly_agg[cost_cols_yearly].min(axis=1)
+            totals = {c: yearly_agg[c].sum() for c in cost_cols_yearly}
+            expensive_col = max(totals, key=totals.get)
+            cheapest_col = min(totals, key=totals.get)
+            yearly_agg["Difference (€)"] = yearly_agg[expensive_col] - yearly_agg[cheapest_col]
         elif is_granular:
             yearly_agg["Difference (€)"] = 0.0
         yearly_agg["Avg. Static Price"] = yearly_agg["Total Static Cost"] / yearly_agg["Total Consumption"]
