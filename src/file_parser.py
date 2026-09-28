@@ -8,7 +8,7 @@ import shutil
 import json
 import pytz
 from typing import List, Optional
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, replace
 from src.config import LOCAL_TIMEZONE, CACHE_FOLDER
 from src.logger import logger
 
@@ -339,14 +339,19 @@ class ConsumptionDataParser:
         file_content = self._preprocess_content(raw_content)
 
         for provider_format in self.provider_formats:
-            try:
-                df = self._try_parse(io.StringIO(file_content), provider_format)
-                if not df.empty:
-                    logger.log(f"Successfully parsed with format: {provider_format.name}", severity=1)
-                    return self._standardize_dataframe(df)
-            except Exception as e:
-                logger.log(f"Format {provider_format.name} skipped: {e}", severity=0)
-
+            for separator in dict.fromkeys((provider_format.separator, ";", ",")):
+                try:
+                    config = replace(provider_format, separator=separator)
+                    df = self._try_parse(io.StringIO(file_content), config)
+                    if not df.empty:
+                        logger.log(f"Successfully parsed with format: {provider_format.name}", severity=1)
+                        return self._standardize_dataframe(df)
+                except Exception as e:
+                    logger.log(
+                        f"Format {provider_format.name} with separator "
+                        f"{separator!r} skipped: {e}",
+                        severity=0,
+                    )
         logger.log("No suitable parser found for the uploaded file.", severity=1)
         return pd.DataFrame()
 
